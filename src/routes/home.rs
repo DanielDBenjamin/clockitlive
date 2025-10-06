@@ -172,7 +172,9 @@ pub fn HomePage() -> impl IntoView {
                     </div>
                     <Calendar classes=all_classes on_date_select=on_date_select/>
                     <h3 class="heading" style="margin-top:16px;">"Classes for " {move || selected_date.get()}</h3>
+                    <div class="classes-scroll-container">
                     <ClassList classes=filtered_classes/>
+                    </div>
                 </aside>
             </div>
         </section>
