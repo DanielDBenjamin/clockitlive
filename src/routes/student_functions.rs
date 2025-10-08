@@ -81,6 +81,7 @@ pub struct StudentScheduleItem {
     pub date: String,
     pub time: String,
     pub status: String,
+    pub venue_updated_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -107,6 +108,7 @@ struct DbStudentScheduleRow {
     #[sqlx(rename = "class_time")]
     class_time: String,
     status: String,
+    venue_updated_at: Option<String>,
 }
 
 // Enroll a single student in a module
@@ -389,26 +391,27 @@ pub async fn get_student_schedule(
         .await
         .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
 
-    let rows = sqlx::query_as::<_, DbStudentScheduleRow>(
-        r#"
-        SELECT
-            c.classID AS class_id,
-            CAST(c.moduleCode AS TEXT) AS module_code,
-            m.moduleTitle AS module_title,
-            c.title AS class_title,
-            c.venue AS venue,
-            c.date AS class_date,
-            c.time AS class_time,
-            c.status AS status
-        FROM classes c
-        INNER JOIN module_students ms ON ms.moduleCode = c.moduleCode
-        INNER JOIN modules m ON m.moduleCode = c.moduleCode
-        WHERE ms.studentEmailAddress = ?
-          AND c.date >= ?
-        ORDER BY c.date ASC, c.time ASC
-        LIMIT 10
-        "#,
-    )
+let rows = sqlx::query_as::<_, DbStudentScheduleRow>(
+    r#"
+    SELECT
+        c.classID AS class_id,
+        CAST(c.moduleCode AS TEXT) AS module_code,
+        m.moduleTitle AS module_title,
+        c.title AS class_title,
+        c.venue AS venue,
+        c.date AS class_date,
+        c.time AS class_time,
+        c.status AS status,
+        c.venue_updated_at AS venue_updated_at
+    FROM classes c
+    INNER JOIN module_students ms ON ms.moduleCode = c.moduleCode
+    INNER JOIN modules m ON m.moduleCode = c.moduleCode
+    WHERE ms.studentEmailAddress = ?
+      AND c.date >= ?
+    ORDER BY c.date ASC, c.time ASC
+    LIMIT 10
+    "#,
+)
     .bind(&trimmed_email)
     .bind(&selected_date)
     .fetch_all(&pool)
@@ -426,6 +429,7 @@ pub async fn get_student_schedule(
             date: row.class_date,
             time: row.class_time,
             status: row.status,
+            venue_updated_at: row.venue_updated_at,
         })
         .collect::<Vec<_>>();
 
