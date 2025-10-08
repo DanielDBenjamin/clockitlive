@@ -167,7 +167,7 @@ pub fn StudentLoginPage() -> impl IntoView {
                 }}
 
                 <div class="student-login-footer">
-                    <a href="#" class="student-forgot-link">"Forgot password?"</a>
+                    <a href="/forgot-password" class="student-forgot-link">"Forgot password?"</a>
                     <a href="/register" class="student-create-link">"Create account"</a>
                 </div>
 
