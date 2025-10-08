@@ -42,8 +42,6 @@ fn is_venue_recently_updated(venue_updated_at: &Option<String>) -> bool {
 // LocalStorage helpers for dismissed venue alerts
 #[cfg(not(feature = "ssr"))]
 fn get_dismissed_venue_alerts() -> HashMap<i64, String> {
-    use wasm_bindgen::JsValue;
-    
     let window = web_sys::window().expect("no global `window` exists");
     let storage = window.local_storage().ok().flatten();
     
@@ -59,8 +57,6 @@ fn get_dismissed_venue_alerts() -> HashMap<i64, String> {
 
 #[cfg(not(feature = "ssr"))]
 fn add_dismissed_venue_alert(class_id: i64, venue_updated_at: String) {
-    use wasm_bindgen::JsValue;
-    
     let window = web_sys::window().expect("no global `window` exists");
     let storage = window.local_storage().ok().flatten();
     

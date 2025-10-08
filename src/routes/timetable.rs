@@ -163,7 +163,6 @@ pub fn Timetable() -> impl IntoView {
                             <option value="Tomorrow">"Tomorrow"</option>
                             <option value="Yesterday">"Yesterday"</option>
                         </select>
-                        <A href="/classes/new" attr:class="btn btn-primary">"+ Add Class"</A>
                     </div>
                 </div>
                 <div class="info-bar">
