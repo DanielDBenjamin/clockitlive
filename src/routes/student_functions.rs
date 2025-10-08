@@ -770,3 +770,187 @@ pub async fn get_student_recent_activity(
         )
         .collect())
 }
+
+// === TUTOR FUNCTIONS ===
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct EnrollTutorRequest {
+    pub tutor_email: String,
+    pub module_code: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct TutorEnrollmentResponse {
+    pub success: bool,
+    pub message: String,
+    pub tutor: Option<TutorInfo>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct TutorInfo {
+    pub user_id: i64,
+    pub name: String,
+    pub surname: String,
+    pub email_address: String,
+}
+
+// Enroll a tutor in a module
+#[server(EnrollTutor, "/api")]
+pub async fn enroll_tutor(
+    request: EnrollTutorRequest,
+) -> Result<TutorEnrollmentResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    // Check if tutor exists
+    let tutor = sqlx::query_as::<_, (i64, String, String, String)>(
+        "SELECT userID, name, surname, emailAddress FROM users WHERE emailAddress = ? AND role = 'tutor'"
+    )
+    .bind(&request.tutor_email)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+    let tutor = match tutor {
+        Some(t) => t,
+        None => {
+            return Ok(TutorEnrollmentResponse {
+                success: false,
+                message: "Tutor not found with this email address".to_string(),
+                tutor: None,
+            })
+        }
+    };
+
+    // Check if module exists
+    let module_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM modules WHERE moduleCode = ?)")
+            .bind(&request.module_code)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+    if !module_exists {
+        return Ok(TutorEnrollmentResponse {
+            success: false,
+            message: "Module not found".to_string(),
+            tutor: None,
+        });
+    }
+
+    // Check if tutor is already enrolled
+    let already_enrolled = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM module_tutor WHERE moduleCode = ? AND tutorEmailAddress = ?)"
+    )
+    .bind(&request.module_code)
+    .bind(&request.tutor_email)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+    if already_enrolled {
+        return Ok(TutorEnrollmentResponse {
+            success: false,
+            message: "Tutor is already enrolled in this module".to_string(),
+            tutor: None,
+        });
+    }
+
+    // Enroll the tutor
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "INSERT INTO module_tutor (moduleCode, tutorEmailAddress, created_at) VALUES (?, ?, ?)"
+    )
+    .bind(&request.module_code)
+    .bind(&request.tutor_email)
+    .bind(&now)
+    .execute(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Failed to enroll tutor: {}", e)))?;
+
+    Ok(TutorEnrollmentResponse {
+        success: true,
+        message: "Tutor enrolled successfully".to_string(),
+        tutor: Some(TutorInfo {
+            user_id: tutor.0,
+            name: tutor.1,
+            surname: tutor.2,
+            email_address: tutor.3,
+        }),
+    })
+}
+
+// Get tutors for a module
+#[server(GetModuleTutors, "/api")]
+pub async fn get_module_tutors(module_code: String) -> Result<Vec<TutorInfo>, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    let tutors = sqlx::query_as::<_, (i64, String, String, String)>(
+        r#"
+        SELECT u.userID, u.name, u.surname, u.emailAddress
+        FROM users u
+        INNER JOIN module_tutor mt ON u.emailAddress = mt.tutorEmailAddress
+        WHERE mt.moduleCode = ?
+        ORDER BY u.surname, u.name
+        "#
+    )
+    .bind(&module_code)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+    Ok(tutors
+        .into_iter()
+        .map(|(user_id, name, surname, email_address)| TutorInfo {
+            user_id,
+            name,
+            surname,
+            email_address,
+        })
+        .collect())
+}
+
+// Unenroll a tutor from a module
+#[server(UnenrollTutor, "/api")]
+pub async fn unenroll_tutor(
+    request: EnrollTutorRequest,
+) -> Result<TutorEnrollmentResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    // Check if tutor is enrolled
+    let enrolled = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM module_tutor WHERE moduleCode = ? AND tutorEmailAddress = ?)"
+    )
+    .bind(&request.module_code)
+    .bind(&request.tutor_email)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+    if !enrolled {
+        return Ok(TutorEnrollmentResponse {
+            success: false,
+            message: "Tutor is not enrolled in this module".to_string(),
+            tutor: None,
+        });
+    }
+
+    // Remove the tutor
+    sqlx::query("DELETE FROM module_tutor WHERE moduleCode = ? AND tutorEmailAddress = ?")
+        .bind(&request.module_code)
+        .bind(&request.tutor_email)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to unenroll tutor: {}", e)))?;
+
+    Ok(TutorEnrollmentResponse {
+        success: true,
+        message: "Tutor unenrolled successfully".to_string(),
+        tutor: None,
+    })
+}

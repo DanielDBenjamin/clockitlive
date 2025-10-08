@@ -11,14 +11,32 @@ pub fn TopBar() -> impl IntoView {
         None => "User".to_string(),
     };
 
+    let profile_url = move || match current_user.get() {
+        Some(user) => match user.role.as_str() {
+            "lecturer" => "/lecturer/profile",
+            "tutor" => "/tutor/profile",
+            _ => "/lecturer/profile", // fallback
+        },
+        None => "/lecturer/profile",
+    };
+
+    let user_avatar = move || match current_user.get() {
+        Some(user) => match user.role.as_str() {
+            "lecturer" => "👩🏻‍🏫",
+            "tutor" => "👨🏻‍🏫",
+            _ => "👩🏻‍🏫", // fallback
+        },
+        None => "👩🏻‍🏫",
+    };
+
     view! {
         <header class="topbar" role="banner">
             <div class="topbar-left">
                 <div class="brand"><A href="/home"><img src="/logo.png" alt="Logo"/></A></div>
             </div>
             <div class="topbar-right">
-                <A href="/lecturer/profile" attr:class="user-chip">
-                    <span class="avatar" aria-hidden="true">"👩🏻‍🏫"</span>
+                <A href=profile_url attr:class="user-chip">
+                    <span class="avatar" aria-hidden="true">{user_avatar}</span>
                     <span class="name">{user_name}</span>
                 </A>
             </div>

@@ -164,14 +164,16 @@ pub async fn get_lecturer_modules_with_stats(
             COUNT(DISTINCT c.classID) as class_count,
             COUNT(DISTINCT ms.studentEmailAddress) as student_count
         FROM modules m
-        INNER JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
+        LEFT JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
+        LEFT JOIN module_tutor mt ON m.moduleCode = mt.moduleCode
         LEFT JOIN classes c ON m.moduleCode = c.moduleCode
         LEFT JOIN module_students ms ON m.moduleCode = ms.moduleCode
-        WHERE lm.lecturerEmailAddress = ?
+        WHERE lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?
         GROUP BY m.moduleCode, m.moduleTitle, m.description
         ORDER BY m.moduleTitle
         "#,
     )
+    .bind(lecturer_email)
     .bind(lecturer_email)
     .fetch_all(pool)
     .await

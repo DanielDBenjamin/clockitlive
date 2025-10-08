@@ -28,6 +28,15 @@ pub fn EditModule() -> impl IntoView {
     let csv_content = RwSignal::new(String::new());
     let student_message = RwSignal::new(String::new());
 
+    // Tutor management state
+    let tutors = RwSignal::new(Vec::<TutorInfo>::new());
+    let new_tutor_email = RwSignal::new(String::new());
+    let show_add_tutor_modal = RwSignal::new(false);
+    let show_remove_tutor_modal = RwSignal::new(false);
+    let tutor_to_remove = RwSignal::new(String::new());
+    let tutor_name_to_remove = RwSignal::new(String::new());
+    let tutor_message = RwSignal::new(String::new());
+
     // Load module data
     let module_resource = Resource::new(
         move || module_code.get(),
@@ -56,6 +65,20 @@ pub fn EditModule() -> impl IntoView {
         },
     );
 
+    // Load tutors
+    let tutors_resource = Resource::new(
+        move || module_code.get(),
+        |code| async move {
+            if code.is_empty() {
+                return Vec::new();
+            }
+            match get_module_tutors(code).await {
+                Ok(tutors) => tutors,
+                _ => Vec::new(),
+            }
+        },
+    );
+
     // Populate form when module loads
     Effect::new(move |_| {
         if let Some(Some(module)) = module_resource.get() {
@@ -69,6 +92,12 @@ pub fn EditModule() -> impl IntoView {
         if let Some(Some(student_list)) = students_resource.get() {
             students.set(student_list);
         }
+    });
+
+    // Populate tutors when they load
+    Effect::new(move |_| {
+        let tutor_list = tutors_resource.get();
+        tutors.set(tutor_list);
     });
 
     let update_action = Action::new(
@@ -95,6 +124,17 @@ pub fn EditModule() -> impl IntoView {
         let module_code = module_code.clone();
         let email = email.clone();
         async move { unenroll_student(module_code, email).await }
+    });
+
+    // Tutor actions
+    let enroll_tutor_action = Action::new(move |request: &EnrollTutorRequest| {
+        let request = request.clone();
+        async move { enroll_tutor(request).await }
+    });
+
+    let unenroll_tutor_action = Action::new(move |request: &EnrollTutorRequest| {
+        let request = request.clone();
+        async move { unenroll_tutor(request).await }
     });
 
     let delete_module_action = Action::new(move |module_code: &String| {

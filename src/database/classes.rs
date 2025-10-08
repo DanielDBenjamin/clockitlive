@@ -153,12 +153,14 @@ pub async fn get_lecturer_classes(
 ) -> Result<Vec<Class>, String> {
     let classes = sqlx::query_as::<_, DbClass>(
         r#"
-        SELECT c.* FROM classes c
-        INNER JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
-        WHERE lm.lecturerEmailAddress = ?
+        SELECT DISTINCT c.* FROM classes c
+        LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+        LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
+        WHERE lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?
         ORDER BY c.date, c.time
         "#,
     )
+    .bind(lecturer_email)
     .bind(lecturer_email)
     .fetch_all(pool)
     .await

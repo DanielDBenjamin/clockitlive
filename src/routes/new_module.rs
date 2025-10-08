@@ -11,6 +11,15 @@ pub fn NewModule() -> impl IntoView {
     let current_user = get_current_user();
     let navigate = use_navigate();
 
+    // Check if user is a tutor and redirect if so
+    Effect::new(move || {
+        if let Some(user) = current_user.get() {
+            if user.role == "tutor" {
+                navigate("/home", Default::default());
+            }
+        }
+    });
+
     let module_code = RwSignal::new(String::new());
     let title = RwSignal::new(String::new());
     let desc = RwSignal::new(String::new());
