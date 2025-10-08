@@ -193,6 +193,48 @@ pub async fn get_lecturer_modules_with_stats(
         .collect())
 }
 
+/// Get modules for tutors (modules they are assigned to)
+#[cfg(feature = "ssr")]
+pub async fn get_tutor_modules_with_stats(
+    pool: &SqlitePool,
+    tutor_email: &str,
+) -> Result<Vec<ModuleWithStats>, String> {
+    let modules = sqlx::query_as::<_, (String, String, Option<String>, i32, i32)>(
+        r#"
+        SELECT 
+            CAST(m.moduleCode AS TEXT),
+            m.moduleTitle,
+            m.description,
+            COUNT(DISTINCT c.classID) as class_count,
+            COUNT(DISTINCT ms.studentEmailAddress) as student_count
+        FROM modules m
+        INNER JOIN module_tutor mt ON m.moduleCode = mt.moduleCode
+        LEFT JOIN classes c ON m.moduleCode = c.moduleCode
+        LEFT JOIN module_students ms ON m.moduleCode = ms.moduleCode
+        WHERE mt.tutorEmailAddress = ?
+        GROUP BY m.moduleCode, m.moduleTitle, m.description
+        ORDER BY m.moduleTitle
+        "#,
+    )
+    .bind(tutor_email)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Database error: {}", e))?;
+
+    Ok(modules
+        .into_iter()
+        .map(
+            |(code, title, desc, class_count, student_count)| ModuleWithStats {
+                module_code: code,
+                module_title: title,
+                description: desc,
+                student_count,
+                class_count,
+            },
+        )
+        .collect())
+}
+
 /// Get a single module by code
 #[cfg(feature = "ssr")]
 pub async fn get_module(pool: &SqlitePool, module_code: &str) -> Result<Option<Module>, String> {

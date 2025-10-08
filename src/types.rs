@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 // Safe user profile (no password) - available for both client and server
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
 pub struct UserProfile {
     pub user_id: i64,
     pub name: String,

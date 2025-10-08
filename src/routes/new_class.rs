@@ -1,4 +1,5 @@
 use crate::routes::class_functions::create_class_fn;
+use crate::user_context::get_current_user;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_query_map};
@@ -7,6 +8,7 @@ use leptos_router::hooks::{use_navigate, use_query_map};
 pub fn NewClass() -> impl IntoView {
     let navigate = use_navigate();
     let query = use_query_map();
+    let current_user = get_current_user();
 
     let title = RwSignal::new(String::new());
     let venue = RwSignal::new(String::new());
@@ -41,6 +43,7 @@ pub fn NewClass() -> impl IntoView {
             time_val,
             duration_val,
             count,
+            created_by,
         ): &(
             String,
             String,
@@ -51,6 +54,7 @@ pub fn NewClass() -> impl IntoView {
             String,
             i32,
             Option<i32>,
+            String,
         )| {
             let module = module.clone();
             let title_val = title_val.clone();
@@ -61,6 +65,7 @@ pub fn NewClass() -> impl IntoView {
             let time_val = time_val.clone();
             let duration_val = *duration_val;
             let count = *count;
+            let created_by = created_by.clone();
             async move {
                 create_class_fn(
                     module,
@@ -72,6 +77,7 @@ pub fn NewClass() -> impl IntoView {
                     time_val,
                     duration_val,
                     count,
+                    created_by,
                 )
                 .await
             }
@@ -128,6 +134,8 @@ pub fn NewClass() -> impl IntoView {
         };
 
         let duration_val = duration.get().parse::<i32>().unwrap_or(90).max(15);
+        
+        let user_email = current_user.get().map(|u| u.email_address).unwrap_or_default();
 
         create_action.dispatch((
             current_module,
@@ -139,6 +147,7 @@ pub fn NewClass() -> impl IntoView {
             time_str,
             duration_val,
             count_val,
+            user_email,
         ));
     };
 

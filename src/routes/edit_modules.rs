@@ -1,13 +1,29 @@
 use crate::routes::module_functions::{get_module_fn, update_module_fn};
 use crate::routes::student_functions::*;
+use crate::user_context::get_current_user;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_query_map};
 
 #[component]
 pub fn EditModule() -> impl IntoView {
+    let current_user = get_current_user();
     let navigate = use_navigate();
     let query = use_query_map();
+
+    // Create clones for different uses
+    let navigate_tutor = navigate.clone();
+    let navigate_delete = navigate.clone();
+    let navigate_update = navigate.clone();
+
+    // Check if user is a tutor and redirect if so
+    Effect::new(move || {
+        if let Some(user) = current_user.get() {
+            if user.role == "tutor" {
+                navigate_tutor("/home", Default::default());
+            }
+        }
+    });
 
     let module_code = Signal::derive(move || query.with(|q| q.get("code").unwrap_or_default()));
 
@@ -36,6 +52,7 @@ pub fn EditModule() -> impl IntoView {
     let tutor_to_remove = RwSignal::new(String::new());
     let tutor_name_to_remove = RwSignal::new(String::new());
     let tutor_message = RwSignal::new(String::new());
+    let tutor_message_success = RwSignal::new(true);
 
     // Load module data
     let module_resource = Resource::new(
@@ -177,13 +194,12 @@ pub fn EditModule() -> impl IntoView {
 
     // Handle delete response
     Effect::new({
-        let navigate = navigate.clone();
         move |_| {
             if let Some(result) = delete_module_action.value().get() {
                 match result {
                     Ok(response) => {
                         if response.success {
-                            let nav = navigate.clone();
+                            let nav = navigate_delete.clone();
                             set_timeout(
                                 move || {
                                     nav("/home", Default::default());
@@ -206,7 +222,6 @@ pub fn EditModule() -> impl IntoView {
 
     // Handle update response
     Effect::new({
-        let navigate = navigate.clone();
         move |_| {
             if let Some(result) = update_action.value().get() {
                 match result {
@@ -215,7 +230,7 @@ pub fn EditModule() -> impl IntoView {
                         success.set(response.success);
 
                         if response.success {
-                            let nav = navigate.clone();
+                            let nav = navigate_update.clone();
                             set_timeout(
                                 move || {
                                     nav("/home", Default::default());
@@ -376,6 +391,104 @@ pub fn EditModule() -> impl IntoView {
         }
     });
 
+    // Tutor management handlers
+    let handle_add_tutor = move |_: leptos::ev::MouseEvent| {
+        new_tutor_email.set(String::new());
+        tutor_message.set(String::new());
+        tutor_message_success.set(true);
+        show_add_tutor_modal.set(true);
+    };
+
+    let on_submit_add_tutor = move |_: leptos::ev::MouseEvent| {
+        let email = new_tutor_email.get().trim().to_lowercase();
+        if email.is_empty() {
+            tutor_message.set("Please enter an email address".to_string());
+            tutor_message_success.set(false);
+            return;
+        }
+
+        let request = EnrollTutorRequest {
+            module_code: module_code.get(),
+            tutor_email: email,
+        };
+
+        enroll_tutor_action.dispatch(request);
+    };
+
+    // Handle tutor enrollment response
+    Effect::new(move |_| {
+        if let Some(result) = enroll_tutor_action.value().get() {
+            match result {
+                Ok(response) => {
+                    tutor_message.set(response.message.clone());
+                    tutor_message_success.set(response.success);
+
+                    if response.success {
+                        new_tutor_email.set(String::new());
+                        show_add_tutor_modal.set(false);
+                        
+                        // Reload tutors
+                        let code = module_code.get();
+                        leptos::task::spawn_local(async move {
+                            if let Ok(tutor_list) = get_module_tutors(code).await {
+                                tutors.set(tutor_list);
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    tutor_message.set(format!("Error: {}", e));
+                    tutor_message_success.set(false);
+                }
+            }
+        }
+    });
+
+    // Handle tutor removal - open confirmation modal
+    let handle_remove_tutor = move |email: String, name: String| {
+        tutor_to_remove.set(email);
+        tutor_name_to_remove.set(name);
+        show_remove_tutor_modal.set(true);
+    };
+
+    // Confirm tutor removal
+    let on_confirm_remove_tutor = move |_: leptos::ev::MouseEvent| {
+        let request = EnrollTutorRequest {
+            module_code: module_code.get(),
+            tutor_email: tutor_to_remove.get(),
+        };
+        unenroll_tutor_action.dispatch(request);
+        show_remove_tutor_modal.set(false);
+    };
+
+    let on_cancel_remove_tutor = move |_: leptos::ev::MouseEvent| {
+        show_remove_tutor_modal.set(false);
+    };
+
+    // Handle unenroll tutor response
+    Effect::new(move |_| {
+        if let Some(result) = unenroll_tutor_action.value().get() {
+            match result {
+                Ok(response) => {
+                    tutor_message.set(response.message.clone());
+
+                    if response.success {
+                        // Reload tutors
+                        let code = module_code.get();
+                        leptos::task::spawn_local(async move {
+                            if let Ok(tutor_list) = get_module_tutors(code).await {
+                                tutors.set(tutor_list);
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    tutor_message.set(format!("Error: {}", e));
+                }
+            }
+        }
+    });
+
     // NOW the view starts here
     view! {
         <section class="edit-module">
@@ -439,6 +552,70 @@ pub fn EditModule() -> impl IntoView {
                                     </button>
                                     <A href="/home" attr:class="btn btn-outline">"Cancel"</A>
                                 </div>
+
+                                <div class="divider"></div>
+
+                                // Tutor Management Section
+                                <div class="heading" style="display:flex; align-items:center; justify-content:space-between;">
+                                    <span>"Tutor Management"</span>
+                                    <div style="display:flex; gap:8px;">
+                                        <button
+                                            class="btn btn-accent"
+                                            on:click=handle_add_tutor
+                                        >"+ Add Tutor"</button>
+                                    </div>
+                                </div>
+
+                            <Show when=move || !tutor_message.get().is_empty()>
+                                <p
+                                    class=move || if tutor_message_success.get() { "success center" } else { "error center" }
+                                    style="margin-top:8px;"
+                                >
+                                    {tutor_message}
+                                </p>
+                            </Show>
+
+                            <div class="card" style="padding:0; margin-top:10px;">
+                                <Show
+                                    when=move || !tutors.get().is_empty()
+                                    fallback=|| view! {
+                                        <p style="padding:20px; text-align:center; color:#6b7280;">
+                                            "No tutors assigned yet. Add tutors to help with classes."
+                                        </p>
+                                    }
+                                >
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>"Name"</th>
+                                                <th>"Email"</th>
+                                                <th>"Action"</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {move || tutors.get().into_iter().map(|tutor| {
+                                                let email = tutor.email_address.clone();
+                                                let full_name = format!("{} {}", tutor.name, tutor.surname);
+                                                view! {
+                                                    <tr>
+                                                        <td>{full_name.clone()}</td>
+                                                        <td>{email.clone()}</td>
+                                                        <td>
+                                                            <button
+                                                                class="btn btn-outline btn-small"
+                                                                style="color:#ef4444; border-color:#fecaca;"
+                                                                on:click=move |_| {
+                                                                    handle_remove_tutor(email.clone(), full_name.clone());
+                                                                }
+                                                            >"🗑 Remove"</button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            }).collect_view()}
+                                        </tbody>
+                                    </table>
+                                </Show>
+                            </div>
 
                                 <div class="divider"></div>
 
@@ -510,6 +687,8 @@ pub fn EditModule() -> impl IntoView {
                                     </Show>
                                 </div>
                             </div>
+
+                            <div class="divider"></div>
 
                             // Add Student Modal
                             <Show when=move || show_add_modal.get()>
@@ -601,6 +780,68 @@ pub fn EditModule() -> impl IntoView {
                                         "Removing...".into_view()
                                     } else {
                                         "Remove Student".into_view()
+                                    }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </Show>
+
+                // Add Tutor Modal
+                <Show when=move || show_add_tutor_modal.get()>
+                    <div class="modal-overlay" on:click=move |_| show_add_tutor_modal.set(false)>
+                        <div class="modal-content" on:click=|e| e.stop_propagation()>
+                            <h2 class="modal-title">"Add Tutor"</h2>
+                            <p class="modal-text">"Enter the tutor's email address:"</p>
+
+                            <input
+                                class="input"
+                                type="email"
+                                placeholder="tutor@university.ac.za"
+                                bind:value=new_tutor_email
+                                style="margin-bottom:16px;"
+                            />
+
+                            <div class="modal-actions">
+                                <button class="btn btn-outline" on:click=move |_| show_add_tutor_modal.set(false)>"Cancel"</button>
+                                <button
+                                    class="btn btn-accent"
+                                    on:click=on_submit_add_tutor
+                                    disabled=move || enroll_tutor_action.pending().get()
+                                >
+                                    {move || if enroll_tutor_action.pending().get() {
+                                        "Adding...".into_view()
+                                    } else {
+                                        "Add Tutor".into_view()
+                                    }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </Show>
+
+                // Remove Tutor Confirmation Modal
+                <Show when=move || show_remove_tutor_modal.get()>
+                    <div class="modal-overlay" on:click=move |_| show_remove_tutor_modal.set(false)>
+                        <div class="modal-content" on:click=|e| e.stop_propagation()>
+                            <h2 class="modal-title">"Remove Tutor?"</h2>
+                            <p class="modal-text">
+                                "Are you sure you want to remove "
+                                <strong>{move || tutor_name_to_remove.get()}</strong>
+                                " from this module?"
+                            </p>
+
+                            <div class="modal-actions">
+                                <button class="btn btn-outline" on:click=on_cancel_remove_tutor>"Cancel"</button>
+                                <button
+                                    class="btn btn-danger"
+                                    on:click=on_confirm_remove_tutor
+                                    disabled=move || unenroll_tutor_action.pending().get()
+                                >
+                                    {move || if unenroll_tutor_action.pending().get() {
+                                        "Removing...".into_view()
+                                    } else {
+                                        "Remove Tutor".into_view()
                                     }}
                                 </button>
                             </div>
