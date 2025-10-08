@@ -427,6 +427,70 @@ pub async fn update_class_fn(
     }
 }
 
+/// Update a single class that's part of a series (removes it from the series)
+#[server(UpdateSingleInSeries, "/api")]
+pub async fn update_single_in_series_fn(
+    class_id: i64,
+    title: String,
+    description: Option<String>,
+    date: String,
+    time: String,
+    duration_minutes: i32,
+    venue: Option<String>,
+) -> Result<ClassResponse, ServerFnError> {
+    if title.trim().is_empty() {
+        return Ok(ClassResponse {
+            success: false,
+            message: "Class title is required".to_string(),
+            class: None,
+        });
+    }
+
+    if date.trim().is_empty() {
+        return Ok(ClassResponse {
+            success: false,
+            message: "Class date is required".to_string(),
+            class: None,
+        });
+    }
+
+    if duration_minutes <= 0 {
+        return Ok(ClassResponse {
+            success: false,
+            message: "Please choose a valid duration".to_string(),
+            class: None,
+        });
+    }
+
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    // Update the class and remove it from the series by setting recurring to NULL
+    let request = UpdateClassRequest {
+        title: title.trim().to_string(),
+        description: description.filter(|s| !s.trim().is_empty()),
+        date: date.trim().to_string(),
+        time: time.trim().to_string(),
+        duration_minutes,
+        venue: venue.filter(|s| !s.trim().is_empty()),
+        recurring: None, // Remove from series
+    };
+
+    match update_class(&pool, class_id, request).await {
+        Ok(class) => Ok(ClassResponse {
+            success: true,
+            message: "Class updated successfully and removed from series!".to_string(),
+            class: Some(class),
+        }),
+        Err(e) => Ok(ClassResponse {
+            success: false,
+            message: e,
+            class: None,
+        }),
+    }
+}
+
 /// Update all classes in a recurring series
 #[server(UpdateRecurringSeries, "/api")]
 pub async fn update_recurring_series_fn(

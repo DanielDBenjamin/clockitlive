@@ -25,7 +25,7 @@ pub fn ClassList(#[prop(into)] classes: Signal<Vec<Class>>) -> impl IntoView {
                         view! {
                             <li class="class-item">
                                 <A
-                                    href=format!("/classes/edit?id={}", class_id)
+                                    href=format!("/classes/edit?id={}&origin=home", class_id)
                                     attr:class="class-item-link"
                                 >
                                     <span class=format!("dot {}", color) aria-hidden="true"></span>
