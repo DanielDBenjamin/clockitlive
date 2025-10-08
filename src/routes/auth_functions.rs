@@ -6,6 +6,13 @@ use crate::database::{
 };
 use crate::types::{AuthResponse, BasicResponse, RegisterData};
 use leptos::prelude::*;
+#[cfg(feature = "ssr")]
+use std::collections::HashMap;
+#[cfg(feature = "ssr")]
+use std::sync::Mutex;
+#[cfg(feature = "ssr")]
+use rand::Rng;
+
 
 #[server(RegisterUser, "/api")]
 pub async fn register_user(data: RegisterData) -> Result<AuthResponse, ServerFnError> {
@@ -210,4 +217,83 @@ pub async fn reset_password(
             message: e,
         }),
     }
+}
+
+// Simple in-memory OTP storage (in production, use Redis or database)
+#[cfg(feature = "ssr")]
+lazy_static::lazy_static! {
+    static ref OTP_STORE: Mutex<HashMap<String, (String, std::time::SystemTime)>> = Mutex::new(HashMap::new());
+}
+
+#[server(SendOTP, "/api")]
+pub async fn send_otp(email: String) -> Result<BasicResponse, ServerFnError> {
+    if email.trim().is_empty() {
+        return Ok(BasicResponse {
+            success: false,
+            message: "Email is required".to_string(),
+        });
+    }
+
+    let email = email.trim().to_lowercase();
+    
+    // Generate 6-digit OTP
+    let mut rng = rand::thread_rng();
+    let otp: String = (0..6).map(|_| rng.gen_range(0..10).to_string()).collect();
+    
+    // Store OTP with 5-minute expiry
+    let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(300);
+    {
+        let mut store = OTP_STORE.lock().unwrap();
+        store.insert(email.clone(), (otp.clone(), expiry));
+    }
+    
+    // In a real app, send email here. For now, just log it
+    println!("OTP for {}: {}", email, otp);
+    
+    // For development, we'll just return success
+    // In production, integrate with email service like SendGrid, AWS SES, etc.
+    Ok(BasicResponse {
+        success: true,
+        message: format!("OTP sent to {}. Check your email.", email),
+    })
+}
+
+#[server(VerifyOTP, "/api")]
+pub async fn verify_otp(email: String, otp: String) -> Result<BasicResponse, ServerFnError> {
+    if email.trim().is_empty() || otp.trim().is_empty() {
+        return Ok(BasicResponse {
+            success: false,
+            message: "Email and OTP are required".to_string(),
+        });
+    }
+
+    let email = email.trim().to_lowercase();
+    let otp = otp.trim();
+    
+    let mut store = OTP_STORE.lock().unwrap();
+    
+    if let Some((stored_otp, expiry)) = store.get(&email) {
+        // Check if OTP is expired
+        if std::time::SystemTime::now() > *expiry {
+            store.remove(&email);
+            return Ok(BasicResponse {
+                success: false,
+                message: "OTP has expired. Please request a new one.".to_string(),
+            });
+        }
+        
+        // Check if OTP matches
+        if stored_otp == otp {
+            store.remove(&email); // Remove used OTP
+            return Ok(BasicResponse {
+                success: true,
+                message: "OTP verified successfully!".to_string(),
+            });
+        }
+    }
+    
+    Ok(BasicResponse {
+        success: false,
+        message: "Invalid OTP. Please try again.".to_string(),
+    })
 }
