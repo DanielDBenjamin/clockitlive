@@ -208,11 +208,6 @@ pub fn StudentProfilePage() -> impl IntoView {
                             alt=user_name
                             class="student-profile-avatar-img"
                         />
-                        <button class="student-avatar-edit-btn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14m-7-7h14"></path>
-                            </svg>
-                        </button>
                     </div>
                     <h2 class="student-profile-name">{user_name}</h2>
                     <p class="student-profile-subtitle">{user_role}</p>
@@ -239,12 +234,6 @@ pub fn StudentProfilePage() -> impl IntoView {
                             <div class="student-info-label">"Student ID"</div>
                             <div class="student-info-value">{user_id}</div>
                         </div>
-                        <button class="student-info-action-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                        </button>
                     </div>
 
                     <div class="student-info-card">
@@ -258,13 +247,6 @@ pub fn StudentProfilePage() -> impl IntoView {
                             <div class="student-info-label">"Email Address"</div>
                             <div class="student-info-value">{user_email}</div>
                         </div>
-                        <button class="student-info-action-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                                <polyline points="15 3 21 3 21 9"></polyline>
-                                <line x1="10" y1="14" x2="21" y2="3"></line>
-                            </svg>
-                        </button>
                     </div>
 
                     <div class="student-info-card">
@@ -308,21 +290,7 @@ pub fn StudentProfilePage() -> impl IntoView {
                         </svg>
                     </button>
 
-                    <button class="student-settings-item">
-                        <div class="student-settings-icon student-settings-icon-blue">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                            </svg>
-                        </div>
-                        <div class="student-settings-text">
-                            <div class="student-settings-label">"Notification Preferences"</div>
-                            <div class="student-settings-desc">"Manage your notification settings"</div>
-                        </div>
-                        <svg class="student-settings-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 18l6-6-6-6"></path>
-                        </svg>
-                    </button>
+                    
                 </section>
 
                 

@@ -174,16 +174,10 @@ pub fn Profile() -> impl IntoView {
                         prop:src=move || avatar_url().unwrap_or_else(|| "https://ui-avatars.com/api/?name=User&background=14b8a6&color=ffffff&format=svg".to_string())
                         alt="Profile picture"
                     />
-                    <button class="avatar-edit" type="button" aria-label="Update profile picture">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2">
-                            <path d="M12 5v14m-7-7h14"></path>
-                        </svg>
-                    </button>
                 </div>
                 <div class="profile-summary">
                     <h2 id="profile-summary" class="profile-name">{user_display}</h2>
                     <p class="profile-role">{user_role}</p>
-                    <p class="profile-department">"Computer Science Department"</p>
                 </div>
             </section>
 
