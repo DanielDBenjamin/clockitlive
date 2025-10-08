@@ -254,7 +254,7 @@ async fn send_email_otp(to_email: &str, otp: &str) -> Result<(), String> {
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="text-align: center; margin-bottom: 30px;">
                     <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
-                    <p style="color: #6b7280; margin: 5px 0;">"Track your time, manage your life"</p>
+                    <p style="color: #6b7280; margin: 5px 0;">"Almost there! Verify to unlock your dashboard."</p>
                 </div>
                 
                 <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
