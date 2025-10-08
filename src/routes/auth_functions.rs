@@ -12,6 +12,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 #[cfg(feature = "ssr")]
 use rand::Rng;
+#[cfg(feature = "ssr")]
+use lettre::{
+    message::header::ContentType,
+    transport::smtp::authentication::Credentials,
+    Message, SmtpTransport, Transport,
+};
 
 
 #[server(RegisterUser, "/api")]
@@ -225,6 +231,71 @@ lazy_static::lazy_static! {
     static ref OTP_STORE: Mutex<HashMap<String, (String, std::time::SystemTime)>> = Mutex::new(HashMap::new());
 }
 
+#[cfg(feature = "ssr")]
+async fn send_email_otp(to_email: &str, otp: &str) -> Result<(), String> {
+    // Get email credentials from environment variables
+    let smtp_username = std::env::var("SMTP_USERNAME")
+        .map_err(|_| "SMTP_USERNAME environment variable not set")?;
+    let smtp_password = std::env::var("SMTP_PASSWORD")
+        .map_err(|_| "SMTP_PASSWORD environment variable not set")?;
+    let from_name = std::env::var("SMTP_FROM_NAME")
+        .unwrap_or_else(|_| "Clock It".to_string());
+
+    // Create email message
+    let email = Message::builder()
+        .from(format!("{} <{}>", from_name, smtp_username).parse()
+            .map_err(|e| format!("Invalid from address: {}", e))?)
+        .to(to_email.parse()
+            .map_err(|e| format!("Invalid to address: {}", e))?)
+        .subject("Your Clock It Verification Code")
+        .header(ContentType::TEXT_HTML)
+        .body(format!(
+            r#"
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
+                    <p style="color: #6b7280; margin: 5px 0;">"Track your time, manage your life"</p>
+                </div>
+                
+                <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
+                    <h2 style="color: #1f2937; margin-bottom: 20px;">Verify Your Email</h2>
+                    <p style="color: #4b5563; margin-bottom: 30px;">
+                        Enter this verification code to complete your Clock It registration:
+                    </p>
+                    
+                    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; display: inline-block;">
+                        <span style="font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px;">{}</span>
+                    </div>
+                    
+                    <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+                        This code will expire in 5 minutes for security reasons.
+                    </p>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <p style="color: #9ca3af; font-size: 12px;">
+                        If you didn't request this code, please ignore this email.
+                    </p>
+                </div>
+            </div>
+            "#, otp
+        ))
+        .map_err(|e| format!("Failed to build email: {}", e))?;
+
+    // Create SMTP transport
+    let creds = Credentials::new(smtp_username, smtp_password);
+    let mailer = SmtpTransport::relay("smtp.gmail.com")
+        .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
+        .credentials(creds)
+        .build();
+
+    // Send email
+    mailer.send(&email)
+        .map_err(|e| format!("Failed to send email: {}", e))?;
+
+    Ok(())
+}
+
 #[server(SendOTP, "/api")]
 pub async fn send_otp(email: String) -> Result<BasicResponse, ServerFnError> {
     if email.trim().is_empty() {
@@ -236,9 +307,11 @@ pub async fn send_otp(email: String) -> Result<BasicResponse, ServerFnError> {
 
     let email = email.trim().to_lowercase();
     
-    // Generate 6-digit OTP
-    let mut rng = rand::thread_rng();
-    let otp: String = (0..6).map(|_| rng.gen_range(0..10).to_string()).collect();
+    // Generate 6-digit OTP (thread-safe)
+    let otp: String = {
+        let mut rng = rand::thread_rng();
+        (0..6).map(|_| rng.gen_range(0..10).to_string()).collect()
+    };
     
     // Store OTP with 5-minute expiry
     let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(300);
@@ -247,15 +320,25 @@ pub async fn send_otp(email: String) -> Result<BasicResponse, ServerFnError> {
         store.insert(email.clone(), (otp.clone(), expiry));
     }
     
-    // In a real app, send email here. For now, just log it
-    println!("OTP for {}: {}", email, otp);
-    
-    // For development, we'll just return success
-    // In production, integrate with email service like SendGrid, AWS SES, etc.
-    Ok(BasicResponse {
-        success: true,
-        message: format!("OTP sent to {}. Check your email.", email),
-    })
+    // Send email with OTP
+    match send_email_otp(&email, &otp).await {
+        Ok(()) => {
+            println!("✅ OTP email sent successfully to: {}", email);
+            Ok(BasicResponse {
+                success: true,
+                message: format!("Verification code sent to {}. Check your email.", email),
+            })
+        }
+        Err(e) => {
+            println!("❌ Failed to send OTP email to {}: {}", email, e);
+            // For development, still log the OTP so you can test
+            println!("🔑 OTP for testing: {}", otp);
+            Ok(BasicResponse {
+                success: false,
+                message: format!("Failed to send email: {}. Please try again.", e),
+            })
+        }
+    }
 }
 
 #[server(VerifyOTP, "/api")]

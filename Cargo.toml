@@ -64,6 +64,9 @@ axum_session = { version = "0.16", optional = true }
 axum-server = { version = "0.6", features = ["tls-rustls"], optional = true }
 lazy_static = { version = "1.4", optional = true }
 rand = { version = "0.8", optional = true }
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"], optional = true }
+dotenvy = { version = "0.15", optional = true }
+
 
 # TLS dependencies - ONLY for SSR
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -88,6 +91,8 @@ ssr = [
     "dep:axum-server",
     "dep:lazy_static",
     "dep:rand",
+    "dep:lettre",
+    "dep:dotenvy",
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",
