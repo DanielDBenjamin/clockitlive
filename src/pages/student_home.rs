@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 use urlencoding::encode;
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 fn current_date_iso() -> String {
     chrono::Local::now()
@@ -41,7 +41,7 @@ fn is_venue_recently_updated(venue_updated_at: &Option<String>) -> bool {
 
 // LocalStorage helpers for dismissed venue alerts
 #[cfg(not(feature = "ssr"))]
-fn get_dismissed_venue_alerts() -> HashSet<i64> {
+fn get_dismissed_venue_alerts() -> HashMap<i64, String> {
     use wasm_bindgen::JsValue;
     
     let window = web_sys::window().expect("no global `window` exists");
@@ -49,16 +49,16 @@ fn get_dismissed_venue_alerts() -> HashSet<i64> {
     
     if let Some(storage) = storage {
         if let Ok(Some(data)) = storage.get_item("dismissed_venue_alerts") {
-            if let Ok(ids) = serde_json::from_str::<Vec<i64>>(&data) {
-                return ids.into_iter().collect();
+            if let Ok(map) = serde_json::from_str::<HashMap<i64, String>>(&data) {
+                return map;
             }
         }
     }
-    HashSet::new()
+    HashMap::new()
 }
 
 #[cfg(not(feature = "ssr"))]
-fn add_dismissed_venue_alert(class_id: i64) {
+fn add_dismissed_venue_alert(class_id: i64, venue_updated_at: String) {
     use wasm_bindgen::JsValue;
     
     let window = web_sys::window().expect("no global `window` exists");
@@ -66,21 +66,20 @@ fn add_dismissed_venue_alert(class_id: i64) {
     
     if let Some(storage) = storage {
         let mut dismissed = get_dismissed_venue_alerts();
-        dismissed.insert(class_id);
-        let ids: Vec<i64> = dismissed.into_iter().collect();
-        if let Ok(json) = serde_json::to_string(&ids) {
+        dismissed.insert(class_id, venue_updated_at);
+        if let Ok(json) = serde_json::to_string(&dismissed) {
             let _ = storage.set_item("dismissed_venue_alerts", &json);
         }
     }
 }
 
 #[cfg(feature = "ssr")]
-fn get_dismissed_venue_alerts() -> HashSet<i64> {
-    HashSet::new()
+fn get_dismissed_venue_alerts() -> HashMap<i64, String> {
+    HashMap::new()
 }
 
 #[cfg(feature = "ssr")]
-fn add_dismissed_venue_alert(_class_id: i64) {}
+fn add_dismissed_venue_alert(_class_id: i64, _venue_updated_at: String) {}
 
 #[component]
 pub fn StudentHomePage() -> impl IntoView {
@@ -380,7 +379,7 @@ fn schedule_card(
     class: StudentScheduleItem,
     index: usize,
     current_date_iso: String,
-    dismissed_alerts: RwSignal<HashSet<i64>>,
+    dismissed_alerts: RwSignal<HashMap<i64, String>>,
 ) -> impl IntoView {
     let StudentScheduleItem {
         class_id,
@@ -423,20 +422,41 @@ fn schedule_card(
     };
 
     // Check if we should show the venue alert dot
-    let show_venue_alert = Signal::derive(move || {
-        is_venue_recently_updated(&venue_updated_at) 
-            && !dismissed_alerts.get().contains(&class_id)
-    });
+// Check if we should show the venue alert dot
+// Check if we should show the venue alert dot
+let venue_updated_at_clone = venue_updated_at.clone();
+let show_venue_alert = Signal::derive(move || {
+    if !is_venue_recently_updated(&venue_updated_at_clone) {
+        return false;
+    }
+    
+    // Check if we've seen THIS specific venue update
+    if let Some(updated_at) = &venue_updated_at_clone {
+        let dismissed = dismissed_alerts.get();
+        match dismissed.get(&class_id) {
+            Some(seen_timestamp) => {
+                // Show dot if venue was updated AFTER we dismissed it
+                seen_timestamp != updated_at
+            }
+            None => {
+                true
+            }
+        }
+    } else {
+        false
+    }
+});
 
-    let handle_card_click = move |_| {
-        if show_venue_alert.get() {
-            add_dismissed_venue_alert(class_id);
+let handle_card_click = move |_| {
+    if show_venue_alert.get() {
+        if let Some(updated_at) = &venue_updated_at {
+            add_dismissed_venue_alert(class_id, updated_at.clone());
             let mut alerts = dismissed_alerts.get();
-            alerts.insert(class_id);
+            alerts.insert(class_id, updated_at.clone());
             dismissed_alerts.set(alerts);
         }
-    };
-
+    }
+};
     view! {
         <button class="student-module-card" on:click=handle_card_click>
             {move || show_venue_alert.get().then(|| view! {
