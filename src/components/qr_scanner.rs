@@ -21,8 +21,16 @@ pub fn QrScanner(
 ) -> impl IntoView {
     let video_ref = NodeRef::<leptos::html::Video>::new();
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
+    let viewport_ref = NodeRef::<leptos::html::Div>::new();
     let (scanning, set_scanning) = signal(false);
     let (error, set_error) = signal(None::<String>);
+    
+    // Zoom functionality state
+    let (zoom_level, set_zoom_level) = signal(1.0_f64);
+    
+    const MIN_ZOOM: f64 = 1.0;
+    const MAX_ZOOM: f64 = 6.0;
+    const ZOOM_STEP: f64 = 0.25;
 
     // Start camera when component mounts
     #[cfg(target_arch = "wasm32")]
@@ -41,7 +49,6 @@ pub fn QrScanner(
     });
 
     let handle_close = move |_: leptos::ev::MouseEvent| {
-        // Stop all video tracks
         #[cfg(target_arch = "wasm32")]
         {
             if let Some(video_el) = video_ref.get() {
@@ -54,6 +61,25 @@ pub fn QrScanner(
             }
         }
         on_close.run(());
+    };
+
+    // Zoom button handlers - work for all builds
+    let handle_zoom_in = move |_: leptos::ev::MouseEvent| {
+        let current = zoom_level.get();
+        if current < MAX_ZOOM {
+            let new_zoom = (current + ZOOM_STEP).min(MAX_ZOOM);
+            set_zoom_level.set(new_zoom);
+            leptos::logging::log!("Zoom in: {} -> {}", current, new_zoom);
+        }
+    };
+
+    let handle_zoom_out = move |_: leptos::ev::MouseEvent| {
+        let current = zoom_level.get();
+        if current > MIN_ZOOM {
+            let new_zoom = (current - ZOOM_STEP).max(MIN_ZOOM);
+            set_zoom_level.set(new_zoom);
+            leptos::logging::log!("Zoom out: {} -> {}", current, new_zoom);
+        }
     };
 
     #[cfg(target_arch = "wasm32")]
@@ -70,13 +96,18 @@ pub fn QrScanner(
                     </button>
                 </div>
 
-                <div class="qr-scanner-viewport">
+                <div 
+                    class="qr-scanner-viewport"
+                    node_ref=viewport_ref
+                    style="overflow: hidden;"
+                >
                     <video
                         node_ref=video_ref
                         class="qr-video"
                         autoplay=true
                         playsinline=true
                         muted=true
+                        style=move || format!("transform: scale({}); transform-origin: center center; transition: transform 0.1s ease-out;", zoom_level.get())
                     />
                     <canvas node_ref=canvas_ref class="qr-canvas" style="display: none;" />
 
@@ -94,6 +125,33 @@ pub fn QrScanner(
                     </div>
                 })}
 
+                {/* Zoom indicator */}
+                {move || {
+                    let current_zoom = zoom_level.get();
+                    if current_zoom > 1.01 {
+                        view! {
+                            <div class="qr-zoom-indicator-badge">
+                                <span>{format!("{:.1}x", current_zoom)}</span>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! {}.into_any()
+                    }
+                }}
+
+                {/* Zoom controls */}
+                <div class="qr-zoom-controls">
+                    <button class="qr-zoom-btn" on:click=handle_zoom_out>
+                        "−"
+                    </button>
+                    <span class="qr-zoom-level">
+                        {move || format!("{:.2}x", zoom_level.get())}
+                    </span>
+                    <button class="qr-zoom-btn" on:click=handle_zoom_in>
+                        "+"
+                    </button>
+                </div>
+
                 <div class="qr-instructions">
                     <p>"Position the QR code within the frame"</p>
                     {move || if scanning.get() {
@@ -101,32 +159,57 @@ pub fn QrScanner(
                     } else {
                         view! { <p class="qr-status-idle">"Ready"</p> }.into_any()
                     }}
+                    <p class="qr-zoom-help">"Use + and - buttons to zoom"</p>
                 </div>
             </div>
         </div>
     };
 
     #[cfg(not(target_arch = "wasm32"))]
-    let content = view! {
-        <div class="qr-scanner-overlay">
-            <div class="qr-scanner-container">
-                <div class="qr-scanner-header">
-                    <h2>"QR Scanner Not Available"</h2>
-                    <button class="qr-close-btn" on:click=move |_| on_close.run(())>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
-                </div>
-                <div class="qr-instructions">
-                    <p>"QR scanning is only available in the browser"</p>
+    let content = {
+        // Use variables to avoid unused warnings
+        let _ = video_ref;
+        let _ = canvas_ref;
+        let _ = viewport_ref;
+        let _ = scanning;
+        let _ = set_scanning;
+        let _ = error;
+        let _ = set_error;
+        let _ = zoom_level;
+        let _ = set_zoom_level;
+        let _ = handle_zoom_in;
+        let _ = handle_zoom_out;
+        let _ = handle_close;
+        let _ = on_scan;
+        
+        view! {
+            <div class="qr-scanner-overlay">
+                <div class="qr-scanner-container">
+                    <div class="qr-scanner-header">
+                        <h2>"QR Scanner Not Available"</h2>
+                        <button class="qr-close-btn" on:click=move |_| on_close.run(())>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="qr-instructions">
+                        <p>"QR scanning is only available in the browser"</p>
+                    </div>
                 </div>
             </div>
-        </div>
+        }
     };
 
     content
+}
+
+#[cfg(target_arch = "wasm32")]
+fn calculate_distance(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    (dx * dx + dy * dy).sqrt()
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -142,12 +225,23 @@ async fn start_camera(
 
     let constraints = MediaStreamConstraints::new();
 
-    // Create video constraints for rear camera
+    // Create video constraints for rear camera with high resolution
     let video_constraints = js_sys::Object::new();
     js_sys::Reflect::set(
         &video_constraints,
         &JsValue::from_str("facingMode"),
         &JsValue::from_str("environment"),
+    )?;
+    
+    js_sys::Reflect::set(
+        &video_constraints,
+        &JsValue::from_str("width"),
+        &JsValue::from_f64(1920.0),
+    )?;
+    js_sys::Reflect::set(
+        &video_constraints,
+        &JsValue::from_str("height"),
+        &JsValue::from_f64(1080.0),
     )?;
 
     constraints.set_video(&video_constraints);
@@ -225,7 +319,6 @@ fn start_scanning(
             }
         });
 
-        // Keep the interval alive
         std::future::pending::<()>().await;
     });
 }
@@ -236,24 +329,20 @@ fn decode_qr(image_data: &ImageData) -> Option<String> {
     let height = image_data.height();
     let data = image_data.data();
 
-    // Convert RGBA to grayscale
     let mut gray_data = Vec::with_capacity((width * height) as usize);
     for i in (0..data.len()).step_by(4) {
         let r = data[i] as u32;
         let g = data[i + 1] as u32;
         let b = data[i + 2] as u32;
-        // Standard grayscale conversion
         let gray = ((r * 299 + g * 587 + b * 114) / 1000) as u8;
         gray_data.push(gray);
     }
 
-    // Prepare image for rqrr
     let mut img =
         rqrr::PreparedImage::prepare_from_greyscale(width as usize, height as usize, |x, y| {
             gray_data[y * width as usize + x]
         });
 
-    // Try to find and decode QR codes
     let grids = img.detect_grids();
     for grid in grids {
         if let Ok((_meta, content)) = grid.decode() {

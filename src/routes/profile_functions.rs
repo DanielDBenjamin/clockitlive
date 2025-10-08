@@ -12,6 +12,7 @@ pub struct UpdateProfileRequest {
     pub name: String,
     pub surname: String,
     pub email_address: String,
+    pub university: String,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -61,13 +62,14 @@ pub async fn update_profile(
     sqlx::query(
         r#"
         UPDATE users
-        SET name = ?, surname = ?, emailAddress = ?, updated_at = ?
+        SET name = ?, surname = ?, emailAddress = ?, university = ?, updated_at = ?
         WHERE userID = ?
         "#,
     )
     .bind(&request.name.trim())
     .bind(&request.surname.trim())
     .bind(&request.email_address.trim())
+    .bind(&request.university.trim())
     .bind(&now)
     .bind(request.user_id)
     .execute(&pool)
@@ -75,8 +77,8 @@ pub async fn update_profile(
     .map_err(|e| ServerFnError::new(format!("Failed to update profile: {}", e)))?;
 
     // Fetch updated user
-    let user = sqlx::query_as::<_, (i64, String, String, String, String)>(
-        "SELECT userID, name, surname, emailAddress, role FROM users WHERE userID = ?",
+    let user = sqlx::query_as::<_, (i64, String, String, String, String, String)>(
+        "SELECT userID, name, surname, emailAddress, role, university FROM users WHERE userID = ?",
     )
     .bind(request.user_id)
     .fetch_one(&pool)
@@ -92,6 +94,7 @@ pub async fn update_profile(
             surname: user.2,
             email_address: user.3,
             role: user.4,
+            university: user.5,
         }),
     })
 }

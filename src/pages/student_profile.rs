@@ -1,7 +1,9 @@
 use crate::user_context::{clear_current_user, get_current_user};
+use crate::routes::auth_functions::ResetPassword;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use urlencoding::encode;
+use leptos_router::components::A;
 
 fn format_role(role: &str) -> String {
     match role {
@@ -23,6 +25,15 @@ pub fn StudentProfilePage() -> impl IntoView {
     let navigate = use_navigate();
     let current_user = get_current_user();
 
+    // Reset password state
+    let show_reset_modal = RwSignal::new(false);
+    let new_password = RwSignal::new(String::new());
+    let confirm_password = RwSignal::new(String::new());
+    let reset_message = RwSignal::new(String::new());
+    let reset_success = RwSignal::new(false);
+    let show_new_password = RwSignal::new(false);
+    let show_confirm_password = RwSignal::new(false);
+
     let navigate_back = navigate.clone();
     let go_back = move |_| {
         navigate_back("/student/home", Default::default());
@@ -40,6 +51,87 @@ pub fn StudentProfilePage() -> impl IntoView {
         // Redirect to login page
         navigate_logout("/", Default::default());
     };
+
+    // Reset password action
+    let reset_action = ServerAction::<ResetPassword>::new();
+    let reset_pending = reset_action.pending();
+
+    let open_reset_modal = move |_| {
+        show_reset_modal.set(true);
+        new_password.set(String::new());
+        confirm_password.set(String::new());
+        reset_message.set(String::new());
+        reset_success.set(false);
+        show_new_password.set(false);
+        show_confirm_password.set(false);
+    };
+
+    let close_reset_modal = move |_| {
+        show_reset_modal.set(false);
+        new_password.set(String::new());
+        confirm_password.set(String::new());
+        reset_message.set(String::new());
+        reset_success.set(false);
+        show_new_password.set(false);
+        show_confirm_password.set(false);
+    };
+
+    let toggle_new_password = move |_| {
+        show_new_password.set(!show_new_password.get());
+    };
+
+    let toggle_confirm_password = move |_| {
+        show_confirm_password.set(!show_confirm_password.get());
+    };
+
+    let handle_reset_submit = move |_| {
+        reset_message.set(String::new());
+        reset_success.set(false);
+
+        let email = match current_user.get() {
+            Some(user) => user.email_address,
+            None => {
+                reset_message.set("User not found".to_string());
+                return;
+            }
+        };
+
+        reset_action.dispatch(ResetPassword {
+            email,
+            new_password: new_password.get(),
+            confirm_password: confirm_password.get(),
+        });
+    };
+
+    // Handle reset password response
+    let navigate_redirect = navigate.clone();
+    Effect::new(move |_| {
+        if let Some(result) = reset_action.value().get() {
+            match result {
+                Ok(response) => {
+                    reset_message.set(response.message.clone());
+                    reset_success.set(response.success);
+                    if response.success {
+                        new_password.set(String::new());
+                        confirm_password.set(String::new());
+                        // Redirect to profile page after 1.5 seconds
+                        let nav = navigate_redirect.clone();
+                        set_timeout(
+                            move || {
+                                show_reset_modal.set(false);
+                                nav("/student/profile", Default::default());
+                            },
+                            std::time::Duration::from_millis(1500),
+                        );
+                    }
+                }
+                Err(e) => {
+                    reset_message.set(format!("Error: {}", e));
+                    reset_success.set(false);
+                }
+            }
+        }
+    });
 
     // Get user info from context
     let user_name = move || {
@@ -116,11 +208,6 @@ pub fn StudentProfilePage() -> impl IntoView {
                             alt=user_name
                             class="student-profile-avatar-img"
                         />
-                        <button class="student-avatar-edit-btn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14m-7-7h14"></path>
-                            </svg>
-                        </button>
                     </div>
                     <h2 class="student-profile-name">{user_name}</h2>
                     <p class="student-profile-subtitle">{user_role}</p>
@@ -147,12 +234,6 @@ pub fn StudentProfilePage() -> impl IntoView {
                             <div class="student-info-label">"Student ID"</div>
                             <div class="student-info-value">{user_id}</div>
                         </div>
-                        <button class="student-info-action-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                        </button>
                     </div>
 
                     <div class="student-info-card">
@@ -166,13 +247,6 @@ pub fn StudentProfilePage() -> impl IntoView {
                             <div class="student-info-label">"Email Address"</div>
                             <div class="student-info-value">{user_email}</div>
                         </div>
-                        <button class="student-info-action-btn">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                                <polyline points="15 3 21 3 21 9"></polyline>
-                                <line x1="10" y1="14" x2="21" y2="3"></line>
-                            </svg>
-                        </button>
                     </div>
 
                     <div class="student-info-card">
@@ -199,7 +273,7 @@ pub fn StudentProfilePage() -> impl IntoView {
                         "Account Settings"
                     </h3>
 
-                    <button class="student-settings-item">
+                    <button class="student-settings-item" on:click=open_reset_modal>
                         <div class="student-settings-icon student-settings-icon-red">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 1v6"></path>
@@ -216,28 +290,14 @@ pub fn StudentProfilePage() -> impl IntoView {
                         </svg>
                     </button>
 
-                    <button class="student-settings-item">
-                        <div class="student-settings-icon student-settings-icon-blue">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                            </svg>
-                        </div>
-                        <div class="student-settings-text">
-                            <div class="student-settings-label">"Notification Preferences"</div>
-                            <div class="student-settings-desc">"Manage your notification settings"</div>
-                        </div>
-                        <svg class="student-settings-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 18l6-6-6-6"></path>
-                        </svg>
-                    </button>
+                    
                 </section>
 
                 
 
                 {/* Other Options */}
                 <section class="student-profile-section">
-                    <button class="student-settings-item">
+                    <A href="/student/support" attr:class="student-settings-item" attr:style="text-decoration: none;">
                         <div class="student-settings-icon student-settings-icon-gray">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <circle cx="12" cy="12" r="10"></circle>
@@ -251,7 +311,7 @@ pub fn StudentProfilePage() -> impl IntoView {
                         <svg class="student-settings-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M9 18l6-6-6-6"></path>
                         </svg>
-                    </button>
+                    </A>
 
                     <button class="student-settings-item student-settings-item-danger" on:click=handle_sign_out>
                         <div class="student-settings-icon student-settings-icon-red">
@@ -270,6 +330,107 @@ pub fn StudentProfilePage() -> impl IntoView {
                     </button>
                 </section>
             </div>
+
+            {/* Reset Password Modal */}
+            <Show when=move || show_reset_modal.get()>
+                <div class="modal-overlay" on:click=close_reset_modal>
+                    <div class="modal-content" on:click=move |e| e.stop_propagation()>
+                        <div class="modal-header">
+                            <h2 class="modal-title">"Reset Password"</h2>
+                            <button class="modal-close-btn" on:click=close_reset_modal>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 6L6 18M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="modal-body">
+                            <p class="modal-description">"Enter your new password below"</p>
+
+                            <div class="modal-input-group">
+                                <label class="modal-label">"New Password"</label>
+                                <div class="modal-input-wrapper">
+                                    <input
+                                        type=move || if show_new_password.get() { "text" } else { "password" }
+                                        class="modal-input"
+                                        bind:value=new_password
+                                        placeholder="Enter new password"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="modal-eye-btn"
+                                        on:click=toggle_new_password
+                                    >
+                                        <Show when=move || show_new_password.get() fallback=|| view! {
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                                <circle cx="12" cy="12" r="3"/>
+                                            </svg>
+                                        }>
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                                <line x1="1" y1="1" x2="23" y2="23"/>
+                                            </svg>
+                                        </Show>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="modal-input-group">
+                                <label class="modal-label">"Confirm Password"</label>
+                                <div class="modal-input-wrapper">
+                                    <input
+                                        type=move || if show_confirm_password.get() { "text" } else { "password" }
+                                        class="modal-input"
+                                        bind:value=confirm_password
+                                        placeholder="Confirm new password"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="modal-eye-btn"
+                                        on:click=toggle_confirm_password
+                                    >
+                                        <Show when=move || show_confirm_password.get() fallback=|| view! {
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                                <circle cx="12" cy="12" r="3"/>
+                                            </svg>
+                                        }>
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                                <line x1="1" y1="1" x2="23" y2="23"/>
+                                            </svg>
+                                        </Show>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <Show when=move || !reset_message.get().is_empty()>
+                                <div class=move || if reset_success.get() { "modal-message modal-message-success" } else { "modal-message modal-message-error" }>
+                                    {move || reset_message.get()}
+                                </div>
+                            </Show>
+
+                            <div class="modal-actions">
+                                <button
+                                    class="modal-btn modal-btn-cancel"
+                                    on:click=close_reset_modal
+                                    disabled=move || reset_pending.get()
+                                >
+                                    "Cancel"
+                                </button>
+                                <button
+                                    class="modal-btn modal-btn-confirm"
+                                    on:click=handle_reset_submit
+                                    disabled=move || reset_pending.get()
+                                >
+                                    {move || if reset_pending.get() { "Updating..." } else { "Update Password" }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Show>
         </div>
     }
 }

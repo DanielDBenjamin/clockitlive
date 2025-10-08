@@ -17,6 +17,7 @@ pub struct User {
     pub email_address: String,
     pub password: String,
     pub role: String,
+    pub university: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -46,6 +47,7 @@ impl From<User> for UserProfile {
             surname: user.surname,
             email_address: user.email_address,
             role: user.role,
+            university: user.university,
         }
     }
 }

@@ -1,4 +1,5 @@
-use crate::user_context::get_current_user;
+use crate::user_context::{get_current_user, set_current_user};
+use crate::routes::profile_functions::{update_profile, UpdateProfileRequest};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use urlencoding::encode;
@@ -24,16 +25,19 @@ pub fn StudentEditProfilePage() -> impl IntoView {
     let current_user = get_current_user();
 
     let student_id = RwSignal::new(String::new());
+    let user_id = RwSignal::new(0i64);
     let email = RwSignal::new(String::new());
     let first_name = RwSignal::new(String::new());
     let last_name = RwSignal::new(String::new());
     let role_label = RwSignal::new(String::from("Student"));
     let avatar_src = RwSignal::new(String::new());
-    let password = RwSignal::new(String::new());
+    let message = RwSignal::new(String::new());
+    let success = RwSignal::new(false);
 
     Effect::new({
         let current_user = current_user.clone();
         let student_id = student_id.clone();
+        let user_id = user_id.clone();
         let email = email.clone();
         let first_name = first_name.clone();
         let last_name = last_name.clone();
@@ -41,6 +45,7 @@ pub fn StudentEditProfilePage() -> impl IntoView {
         let avatar_src = avatar_src.clone();
         move |_| {
             if let Some(user) = current_user.get() {
+                user_id.set(user.user_id);
                 student_id.set(format!("STU-{0:06}", user.user_id));
                 email.set(user.email_address.clone());
                 first_name.set(user.name.clone());
@@ -52,9 +57,14 @@ pub fn StudentEditProfilePage() -> impl IntoView {
                     "https://ui-avatars.com/api/?name={}&background=14b8a6&color=ffffff&format=svg",
                     encoded
                 ));
-                password.set(String::new());
             }
         }
+    });
+
+    // Update profile action
+    let update_action = Action::new(move |request: &UpdateProfileRequest| {
+        let request = request.clone();
+        async move { update_profile(request).await }
     });
 
     let display_name = Signal::derive(move || {
@@ -75,12 +85,76 @@ pub fn StudentEditProfilePage() -> impl IntoView {
         navigate_back("/student/profile", Default::default());
     };
 
-    let navigate_confirm = navigate.clone();
     let handle_confirm = move |_| {
-        // Here you would typically save the form data
-        // For now, we'll just navigate back to the profile page
-        navigate_confirm("/student/profile", Default::default());
+        message.set(String::new());
+        success.set(false);
+
+        // Validation
+        if first_name.get().trim().is_empty() {
+            message.set("First name is required".to_string());
+            success.set(false);
+            return;
+        }
+
+        if last_name.get().trim().is_empty() {
+            message.set("Last name is required".to_string());
+            success.set(false);
+            return;
+        }
+
+        if email.get().trim().is_empty() {
+            message.set("Email is required".to_string());
+            success.set(false);
+            return;
+        }
+
+        let university = match current_user.get() {
+            Some(user) => user.university,
+            None => "Stellenbosch University".to_string(),
+        };
+
+        let request = UpdateProfileRequest {
+            user_id: user_id.get(),
+            name: first_name.get().trim().to_string(),
+            surname: last_name.get().trim().to_string(),
+            email_address: email.get().trim().to_string(),
+            university,
+        };
+
+        update_action.dispatch(request);
     };
+
+    // Handle update response
+    let navigate_success = navigate.clone();
+    Effect::new(move |_| {
+        if let Some(result) = update_action.value().get() {
+            match result {
+                Ok(response) => {
+                    message.set(response.message.clone());
+                    success.set(response.success);
+
+                    if response.success {
+                        // Update the user context with new data
+                        if let Some(updated_user) = response.user {
+                            set_current_user(updated_user);
+                        }
+                        // Redirect after 1 second
+                        let nav = navigate_success.clone();
+                        set_timeout(
+                            move || {
+                                nav("/student/profile", Default::default());
+                            },
+                            std::time::Duration::from_millis(1000),
+                        );
+                    }
+                }
+                Err(e) => {
+                    message.set(format!("Error: {}", e));
+                    success.set(false);
+                }
+            }
+        }
+    });
 
     view! {
         <div class="student-edit-profile-container">
@@ -112,11 +186,6 @@ pub fn StudentEditProfilePage() -> impl IntoView {
                             alt=move || display_name.get()
                             class="student-edit-profile-avatar-img"
                         />
-                        <button class="student-avatar-edit-btn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                                <path d="M12 4c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8m0-2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 4h-2v4H7v2h4v4h2v-4h4v-2h-4V6z" fill="currentColor"/>
-                            </svg>
-                        </button>
                     </div>
                     <h2 class="student-edit-profile-name">{move || display_name.get()}</h2>
                     <p class="student-edit-profile-subtitle">{move || role_label.get()}</p>
@@ -165,27 +234,9 @@ pub fn StudentEditProfilePage() -> impl IntoView {
                         />
                     </div>
 
+                    {/* Account Type Input */}
                     {/* Password Input */}
-                    <div class="student-edit-input-group">
-                        <div class="student-edit-input-icon student-edit-icon-teal">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                            </svg>
-                        </div>
-                        <input
-                            type="password"
-                            class="student-edit-input"
-                            bind:value=password
-                            placeholder="Password"
-                        />
-                        <button class="student-edit-input-action">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                            </svg>
-                        </button>
-                    </div>
+                    
 
                     {/* University Input */}
                     <div class="student-edit-input-group">
@@ -237,9 +288,20 @@ pub fn StudentEditProfilePage() -> impl IntoView {
                     </div>
                 </section>
 
+                {/* Message Display */}
+                <Show when=move || !message.get().is_empty()>
+                    <div class=move || if success.get() { "student-edit-message student-edit-message-success" } else { "student-edit-message student-edit-message-error" }>
+                        {move || message.get()}
+                    </div>
+                </Show>
+
                 {/* Confirm Button */}
-                <button class="student-confirm-btn" on:click=handle_confirm>
-                    "Confirm"
+                <button
+                    class="student-confirm-btn"
+                    on:click=handle_confirm
+                    disabled=move || update_action.pending().get()
+                >
+                    {move || if update_action.pending().get() { "Saving..." } else { "Confirm" }}
                 </button>
             </div>
         </div>

@@ -1,6 +1,6 @@
 use crate::database::classes::Class;
 use crate::routes::class_functions::{
-    get_active_class_session_fn, get_lecturer_classes_fn, start_class_session_fn,
+    check_all_active_sessions_fn, get_active_class_session_fn, get_lecturer_classes_fn, start_class_session_fn,
 };
 use crate::routes::stats_functions::get_module_enrollment_count;
 use crate::user_context::get_current_user;
@@ -15,10 +15,23 @@ use std::collections::HashSet;
 pub fn Timetable() -> impl IntoView {
     let current_user = get_current_user();
 
-    // Load all classes for the lecturer
-    let classes_resource = Resource::new(
+    // Auto-refresh sessions every 30 seconds to check if they should end
+    let session_refresh_trigger = RwSignal::new(0);
+
+    // Check all active sessions when page loads to auto-end expired ones
+    let _session_cleanup = Resource::new(
         move || current_user.get().map(|u| u.email_address.clone()),
         |email| async move {
+            if email.is_some() {
+                let _ = check_all_active_sessions_fn().await;
+            }
+        },
+    );
+
+    // Load all classes for the lecturer
+    let classes_resource = Resource::new(
+        move || (current_user.get().map(|u| u.email_address.clone()), session_refresh_trigger.get()),
+        |(email, _)| async move {
             match email {
                 Some(email) => match get_lecturer_classes_fn(email).await {
                     Ok(response) if response.success => Some(response.classes),
@@ -31,6 +44,28 @@ pub fn Timetable() -> impl IntoView {
 
     // Clock display on the right (formatted like 09:45 AM)
     let current_time = Signal::derive(move || Local::now().format("%I:%M %p").to_string());
+    
+    // Set up automatic session checking 
+    #[cfg(not(feature = "ssr"))]
+    {
+        // Run cleanup immediately on page load
+        leptos::task::spawn_local(async {
+            let _ = check_all_active_sessions_fn().await;
+        });
+        
+        // Set up periodic cleanup every 30 seconds
+        let trigger = session_refresh_trigger.clone();
+        leptos::task::spawn_local(async move {
+            use gloo_timers::future::sleep;
+            use std::time::Duration;
+            
+            loop {
+                sleep(Duration::from_secs(30)).await;
+                let _ = check_all_active_sessions_fn().await;
+                trigger.update(|n| *n += 1);
+            }
+        });
+    }
 
     // Simple day filter for the timetable header
     let filter_choice = RwSignal::new("Today".to_string());
@@ -363,11 +398,11 @@ fn TimetableRow(class: Class) -> impl IntoView {
 
     // Determine color variant like Home page; use module initials as icon (ASCII only)
     let hash = module_code_display.chars().map(|c| c as u32).sum::<u32>();
-    let variant = match hash % 4 {
-        0 => "mod-purp",
-        1 => "mod-blue",
-        2 => "mod-orange",
-        _ => "mod-green",
+    let (icon, variant) = match hash % 4 {
+        0 => ("</>", "mod-purp"),
+        1 => ("🗄️", "mod-blue"),
+        2 => ("🧩", "mod-orange"),
+        _ => ("🍃", "mod-green"),
     };
     let initials = {
         let letters: String = module_code_display

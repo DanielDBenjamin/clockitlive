@@ -1,4 +1,4 @@
-pub mod about;
+
 pub mod auth_functions;
 pub mod class_functions;
 pub mod class_qr;
@@ -20,7 +20,7 @@ pub mod stats_functions;
 pub mod student_functions;
 pub mod timetable;
 
-pub use about::About;
+
 pub use class_qr::{ClassQrFullscreenPage, ClassQrPage};
 pub use classes::ClassesPage;
 pub use edit_class::EditClass;

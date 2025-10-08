@@ -253,13 +253,7 @@ pub fn ClassQrPage() -> impl IntoView {
                                                     {session_status_text}
                                                 </p>
                                                 <p class="session-start">{session_started_label}</p>
-                                                {if session_is_active {
-                                                    let file_name = download_name.clone().unwrap_or_else(|| "session-qr.svg".to_string());
-                                                    let download_href = download_url.clone();
-                                                    view! { <A href=download_href attr:download=file_name attr:class="download-link">"⬇ Download QR Code"</A> }.into_any()
-                                                } else {
-                                                    view! { <></> }.into_any()
-                                                }}
+                                                
                                             </div>
 
                                             <div class="qr-actions">

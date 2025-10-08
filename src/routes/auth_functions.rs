@@ -169,7 +169,7 @@ pub async fn login_user(email: String, password: String) -> Result<AuthResponse,
 }
 
 #[server(ResetPassword, "/api")]
-pub async fn reset_password_fn(
+pub async fn reset_password(
     email: String,
     new_password: String,
     confirm_password: String,

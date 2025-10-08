@@ -1,10 +1,9 @@
 use crate::components::{NavBar, TopBar};
 use crate::pages::{
     RolePage, StudentEditProfilePage, StudentHomePage, StudentLoginPage, StudentProfilePage,
-    StudentStatisticsPage,
+    StudentStatisticsPage, Support, TermsAndConditions,
 };
-use crate::routes::{
-    About, ClassQrFullscreenPage, ClassQrPage, ClassesPage, EditClass, EditModule, Error, HomePage,
+use crate::routes::{ ClassQrFullscreenPage, ClassQrPage, ClassesPage, EditClass, EditModule, Error, HomePage,
     Login, NewClass, NewModule, Profile, Register, Statistics, Timetable,
 };
 use leptos::prelude::*;
@@ -40,7 +39,7 @@ pub fn App() -> impl IntoView {
     crate::user_context::init_user_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/clock-it.css"/>
+        <Stylesheet id="leptos" href="/pkg/clock-it.css?v=20251007001"/>
         <Title text="Clock-It"/>
         <Router>
             <AppShell/>
@@ -96,6 +95,7 @@ fn AppShell() -> impl IntoView {
                 <Routes fallback=|| view! { <Error/> }>
                     <Route path=StaticSegment("") view=Login/>
                     <Route path=StaticSegment("register") view=Register/>
+                    <Route path=StaticSegment("terms") view=TermsAndConditions/>
                     <Route path=StaticSegment("home") view=HomePage/>
                     <Route path=StaticSegment("classes") view=ClassesPage/>
                     <Route path=(StaticSegment("classes"), StaticSegment("new")) view=NewClass/>
@@ -103,7 +103,6 @@ fn AppShell() -> impl IntoView {
                     <Route path=(StaticSegment("modules"), StaticSegment("edit")) view=EditModule/>
                     <Route path=StaticSegment("timetable") view=Timetable/>
                     <Route path=StaticSegment("statistics") view=Statistics/>
-                    <Route path=StaticSegment("about") view=About/>
                     <Route path=(StaticSegment("lecturer"), StaticSegment("profile")) view=Profile/>
                     <Route path=(StaticSegment("classes"), StaticSegment("edit")) view=EditClass/>
                     <Route path=(StaticSegment("classes"), StaticSegment("qr")) view=ClassQrPage/>
@@ -115,6 +114,7 @@ fn AppShell() -> impl IntoView {
                     <Route path=(StaticSegment("student"), StaticSegment("profile")) view=StudentProfilePage/>
                     <Route path=(StaticSegment("student"), StaticSegment("profile"), StaticSegment("edit")) view=StudentEditProfilePage/>
                     <Route path=(StaticSegment("student"), StaticSegment("statistics")) view=StudentStatisticsPage/>
+                    <Route path=(StaticSegment("student"), StaticSegment("support")) view=Support/>
                 </Routes>
             </main>
             <Show when=move || show_footer.get()>

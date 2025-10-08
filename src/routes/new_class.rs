@@ -14,8 +14,15 @@ pub fn NewClass() -> impl IntoView {
     let recurring = RwSignal::new("No repeat".to_string());
     let recurrence_count = RwSignal::new("8".to_string()); // Store as String for input binding
     let date = RwSignal::new(String::new());
-    let hour = RwSignal::new("10".to_string());
+    // Set default time to 09:00 (common class start time)
+    let hour = RwSignal::new("09".to_string());
     let minute = RwSignal::new("00".to_string());
+    
+    // Helper function to format time with leading zeros and bounds checking
+    let format_time_component = |value: &str, default: u32, max: u32| -> String {
+        let num = value.parse::<u32>().unwrap_or(default).min(max);
+        format!("{:02}", num)
+    };
     let duration = RwSignal::new("90".to_string());
     let message = RwSignal::new(String::new());
     let success = RwSignal::new(false);
@@ -92,7 +99,9 @@ pub fn NewClass() -> impl IntoView {
             return;
         }
 
-        let time_str = format!("{}:{}", hour.get(), minute.get());
+        let formatted_hour = format_time_component(&hour.get(), 9, 23);
+        let formatted_minute = format_time_component(&minute.get(), 0, 59);
+        let time_str = format!("{}:{}", formatted_hour, formatted_minute);
 
         let venue_val = if venue.get().trim().is_empty() {
             None
@@ -244,12 +253,30 @@ pub fn NewClass() -> impl IntoView {
                         <label class="label" style="margin-top:10px;">"Time"</label>
                         <div class="time-picker">
                             <div class="time-box">
-                                <input type="number" min="0" max="23" bind:value=hour />
+                                <input 
+                                    type="number" 
+                                    min="0" 
+                                    max="23" 
+                                    bind:value=hour
+                                    on:blur=move |_| {
+                                        let formatted = format_time_component(&hour.get(), 9, 23);
+                                        hour.set(formatted);
+                                    }
+                                />
                                 <div class="t-label">"Hour"</div>
                             </div>
                             <div class="colon">":"</div>
                             <div class="time-box">
-                                <input type="number" min="0" max="59" bind:value=minute />
+                                <input 
+                                    type="number" 
+                                    min="0" 
+                                    max="59" 
+                                    bind:value=minute
+                                    on:blur=move |_| {
+                                        let formatted = format_time_component(&minute.get(), 0, 59);
+                                        minute.set(formatted);
+                                    }
+                                />
                                 <div class="t-label">"Minute"</div>
                             </div>
                         </div>

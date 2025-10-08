@@ -3,6 +3,7 @@ use crate::routes::profile_functions::{update_profile, UpdateProfileRequest};
 use crate::user_context::{get_current_user, set_current_user};
 use leptos::prelude::*;
 use leptos_router::components::A;
+use urlencoding::encode;
 
 #[component]
 pub fn Profile() -> impl IntoView {
@@ -12,6 +13,7 @@ pub fn Profile() -> impl IntoView {
     let name = RwSignal::new(String::new());
     let surname = RwSignal::new(String::new());
     let email = RwSignal::new(String::new());
+    let university = RwSignal::new(String::new());
     let message = RwSignal::new(String::new());
     let success = RwSignal::new(false);
 
@@ -27,6 +29,7 @@ pub fn Profile() -> impl IntoView {
             name.set(user.name.clone());
             surname.set(user.surname.clone());
             email.set(user.email_address.clone());
+            university.set(user.university.clone());
         }
     });
 
@@ -55,6 +58,7 @@ pub fn Profile() -> impl IntoView {
             name: name.get(),
             surname: surname.get(),
             email_address: email.get(),
+            university: university.get(),
         };
 
         update_action.dispatch(request);
@@ -143,6 +147,17 @@ pub fn Profile() -> impl IntoView {
             .unwrap_or("User")
     };
 
+    let avatar_url = move || {
+        current_user.get().map(|u| {
+            let full_name = format!("{} {}", u.name, u.surname);
+            let encoded = encode(&full_name);
+            format!(
+                "https://ui-avatars.com/api/?name={}&background=14b8a6&color=ffffff&format=svg",
+                encoded
+            )
+        })
+    };
+
     view! {
         <section class="profile-page">
             <header class="page-header">
@@ -155,18 +170,14 @@ pub fn Profile() -> impl IntoView {
 
             <section class="profile-card" aria-labelledby="profile-summary">
                 <div class="profile-avatar">
-                    <img src="https://i.pravatar.cc/160?img=47" alt="Profile picture"/>
-                    <button class="avatar-edit" type="button" aria-label="Update profile picture">
-                        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M2 14.5V18h3.5l9.9-9.9-3.5-3.5L2 14.5z"/>
-                            <path d="M12.4 4l3.6 3.6"/>
-                        </svg>
-                    </button>
+                    <img
+                        prop:src=move || avatar_url().unwrap_or_else(|| "https://ui-avatars.com/api/?name=User&background=14b8a6&color=ffffff&format=svg".to_string())
+                        alt="Profile picture"
+                    />
                 </div>
                 <div class="profile-summary">
                     <h2 id="profile-summary" class="profile-name">{user_display}</h2>
                     <p class="profile-role">{user_role}</p>
-                    <p class="profile-department">"Computer Science Department"</p>
                 </div>
             </section>
 
@@ -195,7 +206,7 @@ pub fn Profile() -> impl IntoView {
                     </div>
                     <div class="profile-field">
                         <label class="profile-label" for="profile-university">"University"</label>
-                        <input id="profile-university" class="input" type="text" value="Stellenbosch University" disabled autocomplete="organization"/>
+                        <input id="profile-university" class="input" type="text" bind:value=university autocomplete="organization"/>
                     </div>
                 </div>
             </section>

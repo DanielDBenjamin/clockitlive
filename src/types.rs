@@ -8,6 +8,7 @@ pub struct UserProfile {
     pub surname: String,
     pub email_address: String,
     pub role: String,
+    pub university: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

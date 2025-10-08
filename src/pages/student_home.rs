@@ -88,6 +88,25 @@ pub fn StudentHomePage() -> impl IntoView {
     let (_scanned_data, set_scanned_data) = signal(None::<String>);
     let feedback = RwSignal::new(None::<(bool, String)>);
     let current_user = get_current_user();
+    
+    // Auto-dismiss feedback after 4 seconds
+    let set_feedback_with_timeout = {
+        let feedback = feedback.clone();
+        move |msg: Option<(bool, String)>| {
+            feedback.set(msg.clone());
+            if msg.is_some() {
+                let feedback_clear = feedback.clone();
+                spawn_local(async move {
+                    #[cfg(not(feature = "ssr"))]
+                    {
+                        use gloo_timers::future::TimeoutFuture;
+                        TimeoutFuture::new(4000).await;
+                        feedback_clear.set(None);
+                    }
+                });
+            }
+        }
+    };
 
     let selected_date = RwSignal::new(current_date_iso());
     let schedule_feedback = RwSignal::new(None::<String>);
@@ -163,14 +182,14 @@ pub fn StudentHomePage() -> impl IntoView {
     let handle_scan = {
         let set_scanned_data = set_scanned_data.clone();
         let set_show_scanner = set_show_scanner.clone();
-        let feedback = feedback.clone();
+        let set_feedback_with_timeout = set_feedback_with_timeout.clone();
         let current_user = current_user.clone();
         Callback::new(move |data: String| {
             set_scanned_data.set(Some(data.clone()));
             set_show_scanner.set(false);
             if let Some(user) = current_user.get() {
                 let email = user.email_address.clone();
-                let feedback = feedback.clone();
+                let set_feedback_with_timeout = set_feedback_with_timeout.clone();
                 let payload = data.clone();
                 spawn_local(async move {
                     #[cfg(not(feature = "ssr"))]
@@ -187,29 +206,29 @@ pub fn StudentHomePage() -> impl IntoView {
                                 .await
                                 {
                                     Ok(resp) => {
-                                        feedback.set(Some((resp.success, resp.message)));
+                                        set_feedback_with_timeout(Some((resp.success, resp.message)));
                                     }
                                     Err(e) => {
-                                        feedback.set(Some((false, e.to_string())));
+                                        set_feedback_with_timeout(Some((false, e.to_string())));
                                     }
                                 }
                             }
                             Err(err) => {
-                                feedback.set(Some((false, err)));
+                                set_feedback_with_timeout(Some((false, err)));
                             }
                         }
                     }
 
                     #[cfg(feature = "ssr")]
                     {
-                        feedback.set(Some((
+                        set_feedback_with_timeout(Some((
                             false,
                             "Location capture requires a browser.".to_string(),
                         )));
                     }
                 });
             } else {
-                feedback.set(Some((
+                set_feedback_with_timeout(Some((
                     false,
                     "Please log in as a student to record attendance.".to_string(),
                 )));
@@ -323,10 +342,46 @@ pub fn StudentHomePage() -> impl IntoView {
                 </Suspense>
             </div>
 
-            {move || feedback.get().map(|(ok, msg)| {
-                let class_name = if ok { "student-feedback success" } else { "student-feedback error" };
-                view! { <div class=class_name>{msg}</div> }.into_any()
-            }).unwrap_or_else(|| view! { <></> }.into_any())}
+            {/* Attendance Feedback Popup */}
+            <Show when=move || feedback.get().is_some()>
+                {move || feedback.get().map(|(success, message)| {
+                    let popup_class = if success { 
+                        "student-attendance-popup student-attendance-popup-success" 
+                    } else { 
+                        "student-attendance-popup student-attendance-popup-error" 
+                    };
+                    view! {
+                        <div class="student-attendance-overlay">
+                            <div class=popup_class>
+                                <div class="student-attendance-icon">
+                                    {if success {
+                                        view! {
+                                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M9 12l2 2 4-4"/>
+                                                <circle cx="12" cy="12" r="10"/>
+                                            </svg>
+                                        }.into_any()
+                                    } else {
+                                        view! {
+                                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="10"/>
+                                                <line x1="15" y1="9" x2="9" y2="15"/>
+                                                <line x1="9" y1="9" x2="15" y2="15"/>
+                                            </svg>
+                                        }.into_any()
+                                    }}
+                                </div>
+                                <div class="student-attendance-title">
+                                    {if success { "Success!" } else { "Error" }}
+                                </div>
+                                <div class="student-attendance-message">
+                                    {message}
+                                </div>
+                            </div>
+                        </div>
+                    }.into_any()
+                }).unwrap_or_else(|| view! { <></> }.into_any())}
+            </Show>
 
             {/* Bottom Navigation */}
             <nav class="student-bottom-nav">
@@ -338,16 +393,11 @@ pub fn StudentHomePage() -> impl IntoView {
                     <span class="student-nav-label">"Home"</span>
                 </button>
 
-                <button class="student-nav-item student-nav-item-scan" on:click=open_scanner>
+                <button class="student-nav-item student-nav-item-scan" on:click=open_scanner data-testid="scan-button">
                     <div class="student-scan-button">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="14" width="7" height="7"></rect>
-                            <rect x="3" y="14" width="7" height="7"></rect>
-                        </svg>
+                        <img src="/i.png" alt="Scan QR" width="46" height="32" data-testid="qr-icon"/>
                     </div>
-                    <span class="student-nav-label">"Scan"</span>
+                    <span class="student-nav-label">"Scan QR"</span>
                 </button>
 
                 <button class="student-nav-item" on:click=go_to_statistics>

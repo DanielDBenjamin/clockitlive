@@ -17,7 +17,6 @@ pub fn NavBar() -> impl IntoView {
                 <NavLink href="/home" label="Home" icon="🏠"/>
                 <NavLink href="/timetable" label="Timetable" icon="📅"/>
                 <NavLink href="/statistics" label="Statistics" icon="📊"/>
-                <NavLink href="/about" label="About" icon="ℹ️"/>
             </nav>
             <div class="sidebar-footer">
                 <button class="signout" on:click=handle_signout>"Sign Out"</button>

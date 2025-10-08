@@ -58,26 +58,33 @@ async fn ensure_session_state(
     let now_naive = Local::now().naive_local();
 
     let mut session = get_active_session(pool, class_id).await?;
+    let expected_end = start_naive + ChronoDuration::minutes(duration_minutes);
 
-    if session.is_none() && now_naive >= start_naive {
-        let new_session = create_session(pool, class_id, None, None, None, None, None).await?;
+    // Check if class has completely passed without being started
+    if session.is_none() && now_naive >= expected_end {
+        // Class time has completely passed, mark as completed
         let now_utc = Utc::now().to_rfc3339();
-        sqlx::query("UPDATE classes SET status = 'in_progress', updated_at = ? WHERE classID = ?")
+        sqlx::query("UPDATE classes SET status = 'completed', updated_at = ? WHERE classID = ?")
             .bind(&now_utc)
             .bind(class_id)
             .execute(pool)
             .await
             .map_err(|e| format!("Failed to update class status: {}", e))?;
-        session = Some(new_session);
+        return Ok(None);
     }
+
+    // DO NOT auto-start sessions - classes should only be started manually by lecturers
+    // Only auto-end sessions when their time has passed
 
     if let Some(existing) = session.clone() {
         if existing.ended_at.is_none() {
             let started_naive = DateTime::parse_from_rfc3339(&existing.started_at)
                 .map(|dt| dt.with_timezone(&Local).naive_local())
                 .unwrap_or(start_naive);
-            let expected_end = started_naive + ChronoDuration::minutes(duration_minutes);
-            if now_naive >= expected_end {
+            let session_expected_end = started_naive + ChronoDuration::minutes(duration_minutes);
+            
+            // End session if either the session duration has passed OR the class end time has passed
+            if now_naive >= session_expected_end || now_naive >= expected_end {
                 end_session(pool, existing.session_id).await?;
                 let now_utc = Utc::now().to_rfc3339();
                 sqlx::query(
@@ -420,6 +427,70 @@ pub async fn update_class_fn(
     }
 }
 
+/// Update a single class that's part of a series (removes it from the series)
+#[server(UpdateSingleInSeries, "/api")]
+pub async fn update_single_in_series_fn(
+    class_id: i64,
+    title: String,
+    description: Option<String>,
+    date: String,
+    time: String,
+    duration_minutes: i32,
+    venue: Option<String>,
+) -> Result<ClassResponse, ServerFnError> {
+    if title.trim().is_empty() {
+        return Ok(ClassResponse {
+            success: false,
+            message: "Class title is required".to_string(),
+            class: None,
+        });
+    }
+
+    if date.trim().is_empty() {
+        return Ok(ClassResponse {
+            success: false,
+            message: "Class date is required".to_string(),
+            class: None,
+        });
+    }
+
+    if duration_minutes <= 0 {
+        return Ok(ClassResponse {
+            success: false,
+            message: "Please choose a valid duration".to_string(),
+            class: None,
+        });
+    }
+
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    // Update the class and remove it from the series by setting recurring to NULL
+    let request = UpdateClassRequest {
+        title: title.trim().to_string(),
+        description: description.filter(|s| !s.trim().is_empty()),
+        date: date.trim().to_string(),
+        time: time.trim().to_string(),
+        duration_minutes,
+        venue: venue.filter(|s| !s.trim().is_empty()),
+        recurring: None, // Remove from series
+    };
+
+    match update_class(&pool, class_id, request).await {
+        Ok(class) => Ok(ClassResponse {
+            success: true,
+            message: "Class updated successfully and removed from series!".to_string(),
+            class: Some(class),
+        }),
+        Err(e) => Ok(ClassResponse {
+            success: false,
+            message: e,
+            class: None,
+        }),
+    }
+}
+
 /// Update all classes in a recurring series
 #[server(UpdateRecurringSeries, "/api")]
 pub async fn update_recurring_series_fn(
@@ -726,9 +797,51 @@ pub async fn end_class_session_fn(session_id: i64) -> Result<ClassSessionRespons
         .await
         .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
 
+    // Manual end session should always work, regardless of timing logic
+    leptos::logging::log!("Manual end session requested for session_id: {}", session_id);
+    
+    // First, check if the session exists and its current state
+    match get_session_by_id(&pool, session_id).await {
+        Ok(Some(session)) => {
+            leptos::logging::log!("Session {} found - class_id: {}, ended_at: {:?}", 
+                session_id, session.class_id, session.ended_at);
+            
+            if session.ended_at.is_some() {
+                leptos::logging::log!("Session {} is already ended, but updating class status anyway", session_id);
+                let now = Utc::now().to_rfc3339();
+                let _ = sqlx::query("UPDATE classes SET status = 'completed', updated_at = ? WHERE classID = ?")
+                    .bind(&now)
+                    .bind(session.class_id)
+                    .execute(&pool)
+                    .await;
+                    
+                return Ok(ClassSessionResponse {
+                    success: true,
+                    message: "Session was already completed".to_string(),
+                    session: Some(session),
+                    class_status: Some("completed".to_string()),
+                });
+            }
+        }
+        Ok(None) => {
+            leptos::logging::log!("Session {} not found!", session_id);
+            return Ok(ClassSessionResponse {
+                success: false,
+                message: "Session not found".to_string(),
+                session: None,
+                class_status: None,
+            });
+        }
+        Err(e) => {
+            leptos::logging::log!("Error fetching session {}: {}", session_id, e);
+        }
+    }
+
     match end_session(&pool, session_id).await {
         Ok(session) => {
             let now = Utc::now().to_rfc3339();
+            
+            // Always update class status to completed, even if session was already ended
             sqlx::query(
                 "UPDATE classes SET status = 'completed', updated_at = ? WHERE classID = ?",
             )
@@ -737,6 +850,8 @@ pub async fn end_class_session_fn(session_id: i64) -> Result<ClassSessionRespons
             .execute(&pool)
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to update class status: {}", e)))?;
+            
+            leptos::logging::log!("Session {} manually ended for class {}", session_id, session.class_id);
 
             // Ensure students who didn't scan are marked absent to keep attendance complete.
             let class_info = get_class_by_id(&pool, session.class_id)
@@ -766,17 +881,40 @@ pub async fn end_class_session_fn(session_id: i64) -> Result<ClassSessionRespons
 
             Ok(ClassSessionResponse {
                 success: true,
-                message: "Session ended".to_string(),
+                message: "Session ended manually".to_string(),
                 session: Some(session),
                 class_status: Some("completed".to_string()),
             })
         }
-        Err(e) => Ok(ClassSessionResponse {
-            success: false,
-            message: e,
-            session: None,
-            class_status: None,
-        }),
+        Err(e) => {
+            leptos::logging::log!("Error ending session {}: {}", session_id, e);
+            
+            // Even if we can't end the session properly, try to get session info for response
+            match get_session_by_id(&pool, session_id).await {
+                Ok(Some(session)) => {
+                    // Session exists but couldn't be ended - might already be ended
+                    let now = Utc::now().to_rfc3339();
+                    let _ = sqlx::query("UPDATE classes SET status = 'completed', updated_at = ? WHERE classID = ?")
+                        .bind(&now)
+                        .bind(session.class_id)
+                        .execute(&pool)
+                        .await;
+                    
+                    Ok(ClassSessionResponse {
+                        success: true,
+                        message: "Session was already ended or completed".to_string(),
+                        session: Some(session),
+                        class_status: Some("completed".to_string()),
+                    })
+                }
+                _ => Ok(ClassSessionResponse {
+                    success: false,
+                    message: format!("Failed to end session: {}", e),
+                    session: None,
+                    class_status: None,
+                }),
+            }
+        },
     }
 }
 
@@ -810,6 +948,43 @@ pub async fn get_active_class_session_fn(
             class_status: Some(class_status),
         }),
     }
+}
+
+#[server(CheckAllActiveSessions, "/api")]
+pub async fn check_all_active_sessions_fn() -> Result<String, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+    
+    // Get all classes that might need status updates (in_progress OR upcoming classes that might have passed)
+    let classes: Vec<(i64, String)> = sqlx::query_as("SELECT classID, status FROM classes WHERE status IN ('in_progress', 'upcoming')")
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to fetch classes: {}", e)))?;
+    
+    let total_classes = classes.len();
+    let mut updated_count = 0;
+    for (class_id, old_status) in classes {
+        if let Err(e) = ensure_session_state(&pool, class_id).await {
+            leptos::logging::log!("Error checking session for class {}: {}", class_id, e);
+        } else {
+            // Check if the class status changed
+            let new_status: Option<String> = sqlx::query_scalar("SELECT status FROM classes WHERE classID = ?")
+                .bind(class_id)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| ServerFnError::new(format!("Failed to check class status: {}", e)))?;
+            
+            if let Some(new_status) = new_status {
+                if new_status != old_status {
+                    updated_count += 1;
+                    leptos::logging::log!("Class {} status changed from {} to {}", class_id, old_status, new_status);
+                }
+            }
+        }
+    }
+    
+    Ok(format!("Checked {} classes, updated {} statuses", total_classes, updated_count))
 }
 
 // Helper function to save a single instance

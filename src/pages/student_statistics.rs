@@ -422,19 +422,12 @@ pub fn StudentStatisticsPage() -> impl IntoView {
                     <span class="student-nav-label">"Home"</span>
                 </button>
 
-                <button class="student-nav-item student-nav-item-scan" disabled>
+                <button class="student-nav-item student-nav-item-scan" disabled=true data-testid="scan-button-disabled">
                     <div class="student-scan-button">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="3" width="7" height="7"></rect>
-                            <rect x="14" y="14" width="7" height="7"></rect>
-                            <rect x="3" y="14" width="7" height="7"></rect>
-                        </svg>
+                        <img src="/i.png" alt="Scan QR" width="46" height="32" data-testid="qr-icon"/>
                     </div>
-                    <span class="student-nav-label">"Scan"</span>
-                </button>
-
-                <button class="student-nav-item student-nav-item-active">
+                    <span class="student-nav-label">"Scan QR"</span>
+                </button>                <button class="student-nav-item student-nav-item-active">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
                         <line x1="12" y1="20" x2="12" y2="4"></line>

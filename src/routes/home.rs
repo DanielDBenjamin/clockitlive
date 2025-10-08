@@ -17,8 +17,8 @@ pub fn HomePage() -> impl IntoView {
         match user {
             Some(user) => {
                 let title = match user.role.as_str() {
-                    "lecturer" => "Dr.",
-                    "tutor" => "Mr./Ms.",
+                    "lecturer" => "",
+                    "tutor" => "",
                     _ => "",
                 };
                 format!("Welcome back, {} {} {}", title, user.name, user.surname)

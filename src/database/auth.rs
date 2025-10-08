@@ -51,8 +51,8 @@ pub async fn create_user(
     // Insert new user
     let result = sqlx::query(
         r#"
-        INSERT INTO users (name, surname, emailAddress, password, role, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO users (name, surname, emailAddress, password, role, university, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&request.name)
@@ -60,6 +60,7 @@ pub async fn create_user(
     .bind(&request.email)
     .bind(&password_hash)
     .bind(&request.role)
+    .bind("Stellenbosch University")
     .bind(&now)
     .bind(&now)
     .execute(pool)
