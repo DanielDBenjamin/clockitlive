@@ -197,6 +197,7 @@ pub async fn delete_class(pool: &SqlitePool, class_id: i64) -> Result<(), String
 }
 
 /// Update an existing class
+/// Update an existing class
 #[cfg(feature = "ssr")]
 pub async fn update_class(
     pool: &SqlitePool,
@@ -205,27 +206,65 @@ pub async fn update_class(
 ) -> Result<Class, String> {
     let now = Utc::now().to_rfc3339();
 
-    // First update the class
-    sqlx::query(
-        r#"
-        UPDATE classes 
-        SET title = ?, description = ?, date = ?, time = ?, 
-            duration_minutes = ?, venue = ?, recurring = ?, updated_at = ?
-        WHERE classID = ?
-        "#,
+    // Check if venue changed
+    let old_venue: Option<String> = sqlx::query_scalar(
+        "SELECT venue FROM classes WHERE classID = ?"
     )
-    .bind(&request.title)
-    .bind(&request.description)
-    .bind(&request.date)
-    .bind(&request.time)
-    .bind(request.duration_minutes)
-    .bind(&request.venue)
-    .bind(&request.recurring)
-    .bind(&now)
     .bind(class_id)
-    .execute(pool)
+    .fetch_optional(pool)
     .await
-    .map_err(|e| format!("Failed to update class: {}", e))?;
+    .map_err(|e| format!("Failed to fetch old venue: {}", e))?
+    .flatten();
+
+    let venue_changed = old_venue != request.venue;
+
+    // Update the class
+    if venue_changed {
+        // If venue changed, update venue_updated_at
+        sqlx::query(
+            r#"
+            UPDATE classes 
+            SET title = ?, description = ?, date = ?, time = ?, 
+                duration_minutes = ?, venue = ?, recurring = ?, updated_at = ?, venue_updated_at = ?
+            WHERE classID = ?
+            "#,
+        )
+        .bind(&request.title)
+        .bind(&request.description)
+        .bind(&request.date)
+        .bind(&request.time)
+        .bind(request.duration_minutes)
+        .bind(&request.venue)
+        .bind(&request.recurring)
+        .bind(&now)
+        .bind(&now)  // Set venue_updated_at to now
+        .bind(class_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to update class: {}", e))?;
+    } else {
+        // Venue didn't change, don't update venue_updated_at
+        sqlx::query(
+            r#"
+            UPDATE classes 
+            SET title = ?, description = ?, date = ?, time = ?, 
+                duration_minutes = ?, venue = ?, recurring = ?, updated_at = ?
+            WHERE classID = ?
+            "#,
+        )
+        .bind(&request.title)
+        .bind(&request.description)
+        .bind(&request.date)
+        .bind(&request.time)
+        .bind(request.duration_minutes)
+        .bind(&request.venue)
+        .bind(&request.recurring)
+        .bind(&now)
+        .bind(class_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to update class: {}", e))?;
+    }
 
     // Then fetch and return the updated class
     get_class_by_id(pool, class_id).await
