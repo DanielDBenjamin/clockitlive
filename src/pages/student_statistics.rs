@@ -1,3 +1,5 @@
+use crate::components::QrScanner;
+use crate::routes::class_functions::record_session_attendance_fn;
 use crate::routes::student_functions::{
     get_student_module_breakdown, get_student_recent_activity, get_student_stats_summary,
     get_student_weekly_attendance, StudentStatsSummary, StudentWeeklyAttendancePoint,
@@ -5,6 +7,7 @@ use crate::routes::student_functions::{
 use crate::user_context::get_current_user;
 use chrono::{Datelike, Local, NaiveDate, NaiveTime};
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 use urlencoding::encode;
 
@@ -17,6 +20,30 @@ pub fn StudentStatisticsPage() -> impl IntoView {
     let navigate = use_navigate();
     let current_user = get_current_user();
 
+    // QR Scanner state
+    let (show_scanner, set_show_scanner) = signal(false);
+    let (_scanned_data, set_scanned_data) = signal(None::<String>);
+    let feedback = RwSignal::new(None::<(bool, String)>);
+    
+    // Auto-dismiss feedback after 4 seconds
+    let set_feedback_with_timeout = {
+        let feedback = feedback.clone();
+        move |msg: Option<(bool, String)>| {
+            feedback.set(msg.clone());
+            if msg.is_some() {
+                let feedback_clear = feedback.clone();
+                spawn_local(async move {
+                    #[cfg(not(feature = "ssr"))]
+                    {
+                        use gloo_timers::future::TimeoutFuture;
+                        TimeoutFuture::new(4000).await;
+                        feedback_clear.set(None);
+                    }
+                });
+            }
+        }
+    };
+
     let navigate_clone1 = navigate.clone();
     let navigate_clone2 = navigate.clone();
     let go_to_home = move |_| {
@@ -27,6 +54,72 @@ pub fn StudentStatisticsPage() -> impl IntoView {
     };
     let go_to_profile = move |_| {
         navigate("/student/profile", Default::default());
+    };
+
+    // QR Scanner handlers
+    let handle_scan = {
+        let set_scanned_data = set_scanned_data.clone();
+        let set_show_scanner = set_show_scanner.clone();
+        let set_feedback_with_timeout = set_feedback_with_timeout.clone();
+        let current_user = current_user.clone();
+        Callback::new(move |data: String| {
+            set_scanned_data.set(Some(data.clone()));
+            set_show_scanner.set(false);
+            if let Some(user) = current_user.get() {
+                let email = user.email_address.clone();
+                let set_feedback_with_timeout = set_feedback_with_timeout.clone();
+                let payload = data.clone();
+                spawn_local(async move {
+                    #[cfg(not(feature = "ssr"))]
+                    {
+                        match crate::utils::geolocation::get_current_location().await {
+                            Ok(location) => {
+                                match record_session_attendance_fn(
+                                    payload.clone(),
+                                    email.clone(),
+                                    Some(location.latitude),
+                                    Some(location.longitude),
+                                    location.accuracy,
+                                )
+                                .await
+                                {
+                                    Ok(resp) => {
+                                        set_feedback_with_timeout(Some((resp.success, resp.message)));
+                                    }
+                                    Err(e) => {
+                                        set_feedback_with_timeout(Some((false, e.to_string())));
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                set_feedback_with_timeout(Some((false, err)));
+                            }
+                        }
+                    }
+
+                    #[cfg(feature = "ssr")]
+                    {
+                        set_feedback_with_timeout(Some((
+                            false,
+                            "Location capture requires a browser.".to_string(),
+                        )));
+                    }
+                });
+            } else {
+                set_feedback_with_timeout(Some((
+                    false,
+                    "Please log in as a student to record attendance.".to_string(),
+                )));
+            }
+        })
+    };
+
+    let handle_close_scanner = Callback::new(move |_| {
+        set_show_scanner.set(false);
+    });
+
+    let open_scanner = move |_| {
+        set_show_scanner.set(true);
     };
 
     let user_full_name = Signal::derive(move || {
@@ -422,12 +515,13 @@ pub fn StudentStatisticsPage() -> impl IntoView {
                     <span class="student-nav-label">"Home"</span>
                 </button>
 
-                <button class="student-nav-item student-nav-item-scan" disabled=true data-testid="scan-button-disabled">
+                <button class="student-nav-item student-nav-item-scan" on:click=open_scanner>
                     <div class="student-scan-button">
                         <img src="/i.png" alt="Scan QR" width="46" height="32" data-testid="qr-icon"/>
                     </div>
                     <span class="student-nav-label">"Scan QR"</span>
-                </button>                <button class="student-nav-item student-nav-item-active">
+                </button>
+                <button class="student-nav-item student-nav-item-active">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
                         <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -436,6 +530,23 @@ pub fn StudentStatisticsPage() -> impl IntoView {
                     <span class="student-nav-label">"Stats"</span>
                 </button>
             </nav>
+
+            <Show when=move || show_scanner.get()>
+                <QrScanner on_scan=handle_scan on_close=handle_close_scanner/>
+            </Show>
+
+            {move || feedback.get().map(|(success, message)| {
+                let feedback_class = if success {
+                    "feedback-message success"
+                } else {
+                    "feedback-message error"
+                };
+                view! {
+                    <div class={feedback_class}>
+                        {message}
+                    </div>
+                }
+            })}
         </div>
     }
 }
