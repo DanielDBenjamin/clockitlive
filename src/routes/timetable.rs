@@ -446,13 +446,22 @@ fn TimetableRow(class: Class) -> impl IntoView {
                 <Show when=move || status_upcoming.get()>
                     <button
                         class="btn btn-primary"
+                        style="display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: center;"
                         disabled=move || start_pending.get()
                         on:click=move |_| {
                             if !start_pending.get() {
                                 start_session_action.dispatch(class_id);
                             }
                         }
-                    >{move || if start_pending.get() { "Starting..." } else { "Start Session" }}</button>
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                        {move || if start_pending.get() { "Starting..." } else { "Start Session" }}
+                    </button>
                 </Show>
                 {move || location_status_display
                     .get()
@@ -463,9 +472,31 @@ fn TimetableRow(class: Class) -> impl IntoView {
                     .map(|msg| view! { <div class="location-error">{msg}</div> }.into_any())
                     .unwrap_or_else(|| view! { <></> }.into_any())}
                 <Show when=move || status_in_progress.get()>
-                    <A href=start_href.clone() attr:class="btn btn-outline">"View Session"</A>
+                    <A
+                        href=start_href.clone()
+                        attr:class="btn btn-outline"
+                        attr:style="display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: center;"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                        "View Session"
+                    </A>
                 </Show>
-                <A href=edit_href attr:class="btn btn-outline">"Edit"</A>
+                <A
+                    href=edit_href
+                    attr:class="btn btn-outline"
+                    attr:style="display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: center;"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    "Edit"
+                </A>
             </div>
         </div>
     }
