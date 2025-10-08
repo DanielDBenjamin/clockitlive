@@ -13,11 +13,11 @@ pub fn TopBar() -> impl IntoView {
 
     let profile_url = move || match current_user.get() {
         Some(user) => match user.role.as_str() {
-            "lecturer" => "/lecturer/profile",
-            "tutor" => "/tutor/profile",
-            _ => "/lecturer/profile", // fallback
+            "lecturer" => "/lecturer/profile".to_string(),
+            "tutor" => "/tutor/profile".to_string(),
+            _ => "/lecturer/profile".to_string(), // fallback
         },
-        None => "/lecturer/profile",
+        None => "/lecturer/profile".to_string(),
     };
 
     let user_avatar = move || match current_user.get() {

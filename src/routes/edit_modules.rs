@@ -96,8 +96,9 @@ pub fn EditModule() -> impl IntoView {
 
     // Populate tutors when they load
     Effect::new(move |_| {
-        let tutor_list = tutors_resource.get();
-        tutors.set(tutor_list);
+        if let Some(tutor_list) = tutors_resource.get() {
+            tutors.set(tutor_list);
+        }
     });
 
     let update_action = Action::new(
