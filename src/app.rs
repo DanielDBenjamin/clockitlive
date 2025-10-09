@@ -3,7 +3,7 @@ use crate::pages::{
     RolePage, StudentEditProfilePage, StudentHomePage, StudentLoginPage, StudentProfilePage,
     StudentStatisticsPage, Support, TermsAndConditions,
 };
-use crate::routes::{ ClassQrFullscreenPage, ClassQrPage, ClassesPage, EditClass, EditModule, Error, HomePage,
+use crate::routes::{ ClassQrFullscreenPage, ClassQrPage, ClassesPage, EditClass, EditModule, Error,ForgotPassword, HomePage,
     Login, NewClass, NewModule, Profile, Register, Statistics, Timetable,
 };
 use leptos::prelude::*;
@@ -61,6 +61,7 @@ fn AppShell() -> impl IntoView {
                 || path.starts_with("/classes")
                 || path.starts_with("/modules")
                 || path.starts_with("/lecturer/profile")
+                || path.starts_with("/tutor/profile")
         })
     };
     let show_sidebar = {
@@ -95,6 +96,7 @@ fn AppShell() -> impl IntoView {
                 <Routes fallback=|| view! { <Error/> }>
                     <Route path=StaticSegment("") view=Login/>
                     <Route path=StaticSegment("register") view=Register/>
+                    <Route path=StaticSegment("forgot-password") view=ForgotPassword/>
                     <Route path=StaticSegment("terms") view=TermsAndConditions/>
                     <Route path=StaticSegment("home") view=HomePage/>
                     <Route path=StaticSegment("classes") view=ClassesPage/>
@@ -104,6 +106,7 @@ fn AppShell() -> impl IntoView {
                     <Route path=StaticSegment("timetable") view=Timetable/>
                     <Route path=StaticSegment("statistics") view=Statistics/>
                     <Route path=(StaticSegment("lecturer"), StaticSegment("profile")) view=Profile/>
+                    <Route path=(StaticSegment("tutor"), StaticSegment("profile")) view=Profile/>
                     <Route path=(StaticSegment("classes"), StaticSegment("edit")) view=EditClass/>
                     <Route path=(StaticSegment("classes"), StaticSegment("qr")) view=ClassQrPage/>
                     <Route path=(StaticSegment("classes"), StaticSegment("qr"), StaticSegment("large")) view=ClassQrFullscreenPage/>

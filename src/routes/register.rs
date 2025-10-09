@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 
 // Import the server functions and types
-use crate::routes::auth_functions::register_user;
+use crate::routes::auth_functions::{register_user, send_otp, verify_otp};
 use crate::types::RegisterData;
 
 // Email validation function
@@ -24,6 +24,12 @@ pub fn Register() -> impl IntoView {
     let terms_accepted = RwSignal::new(false);
     let show_terms_error = RwSignal::new(false);
 
+     // OTP verification state
+    let show_otp = RwSignal::new(false);
+    let otp_code = RwSignal::new(String::new());
+    let otp_message = RwSignal::new(String::new());
+    let pending_registration_data = RwSignal::new(None::<RegisterData>);
+
     // Password visibility state
     let show_password = RwSignal::new(false);
     let show_confirm_password = RwSignal::new(false);
@@ -31,6 +37,17 @@ pub fn Register() -> impl IntoView {
     let register_action = Action::new(|data: &RegisterData| {
         let data = data.clone();
         async move { register_user(data).await }
+    });
+    
+    let send_otp_action = Action::new(|email: &String| {
+        let email = email.clone();
+        async move { send_otp(email).await }
+    });
+    
+    let verify_otp_action = Action::new(|(email, otp): &(String, String)| {
+        let email = email.clone();
+        let otp = otp.clone();
+        async move { verify_otp(email, otp).await }
     });
 
     let on_submit = move |_| {
@@ -60,10 +77,74 @@ pub fn Register() -> impl IntoView {
             role: role.get().to_lowercase(),
         };
 
-        register_action.dispatch(data);
+        // Basic validation first
+        if data.name.trim().is_empty() || data.surname.trim().is_empty() || data.email.trim().is_empty() {
+            message.set("Please fill in all fields".to_string());
+            return;
+        }
+        
+        if data.password.len() < 6 {
+            message.set("Password must be at least 6 characters".to_string());
+            return;
+        }
+        
+        if data.password != data.confirm_password {
+            message.set("Passwords do not match".to_string());
+            return;
+        }
+
+        // Store registration data and send OTP
+        pending_registration_data.set(Some(data.clone()));
+        send_otp_action.dispatch(data.email);
     };
     
-    // Handle response
+    let on_verify_otp = move |_| {
+        if let Some(data) = pending_registration_data.get() {
+            verify_otp_action.dispatch((data.email.clone(), otp_code.get()));
+        }
+    };
+    
+    // Handle OTP send response
+    Effect::new(move |_| {
+        if let Some(result) = send_otp_action.value().get() {
+            match result {
+                Ok(response) => {
+                    if response.success {
+                        show_otp.set(true);
+                        otp_message.set(response.message);
+                    } else {
+                        message.set(response.message);
+                    }
+                }
+                Err(e) => {
+                    message.set(format!("Error sending OTP: {}", e));
+                }
+            }
+        }
+    });
+    
+    // Handle OTP verification response
+    Effect::new(move |_| {
+        if let Some(result) = verify_otp_action.value().get() {
+            match result {
+                Ok(response) => {
+                    if response.success {
+                        // OTP verified, now create the account
+                        if let Some(data) = pending_registration_data.get() {
+                            register_action.dispatch(data);
+                        }
+                    } else {
+                        otp_message.set(response.message);
+                    }
+                }
+                Err(e) => {
+                    otp_message.set(format!("Error verifying OTP: {}", e));
+                }
+            }
+        }
+    });
+
+    // Handle registration response
     Effect::new(move |_| {
         if let Some(result) = register_action.value().get() {
             match result {
@@ -78,6 +159,9 @@ pub fn Register() -> impl IntoView {
                         email.set(String::new());
                         password.set(String::new());
                         confirm.set(String::new());
+                        show_otp.set(false);
+                        otp_code.set(String::new());
+                        pending_registration_data.set(None);
                     }
                 }
                 Err(e) => {
@@ -102,6 +186,10 @@ pub fn Register() -> impl IntoView {
                         class=move || if role.get() == "Lecturer" { "seg-btn active" } else { "seg-btn" }
                         on:click=move |_| role.set("Lecturer".to_string())
                     >"Lecturer"</button>
+                    <button
+                        class=move || if role.get() == "Tutor" { "seg-btn active" } else { "seg-btn" }
+                        on:click=move |_| role.set("Tutor".to_string())
+                    >"Tutor"</button>
                     <button
                         class=move || if role.get() == "Student" { "seg-btn active" } else { "seg-btn" }
                         on:click=move |_| role.set("Student".to_string())
@@ -218,11 +306,13 @@ pub fn Register() -> impl IntoView {
                         <button
                             class="btn btn-accent"
                             on:click=on_submit
-                            disabled=move || register_action.pending().get()
+                            disabled=move || send_otp_action.pending().get() || register_action.pending().get()
                             style="min-width: 200px; justify-content: center;"
                         >
                             <span style="opacity: 1;">
-                                {move || if register_action.pending().get() {
+                                {move || if send_otp_action.pending().get() {
+                                    "Sending OTP..."
+                                } else if register_action.pending().get() {
                                     "Creating Account..."
                                 } else {
                                     "Create Account"
@@ -281,6 +371,71 @@ pub fn Register() -> impl IntoView {
                     </p>
                 </div>
             </div>
+            
+            // OTP Verification Bar
+            <Show when=move || show_otp.get()>
+                <div class="otp-bar">
+                    <div class="otp-content">
+                        <div class="otp-header">
+                            <h3>"Verify Your Email"</h3>
+                            <button class="otp-close" on:click=move |_| {
+                                show_otp.set(false);
+                                otp_code.set(String::new());
+                                otp_message.set(String::new());
+                                pending_registration_data.set(None);
+                            }>"×"</button>
+                        </div>
+                        <p class="otp-text">"Enter the 6-digit code sent to your email"</p>
+                        
+                        <div class="otp-input-group">
+                            <input 
+                                class="otp-input" 
+                                type="text" 
+                                placeholder="000000" 
+                                maxlength="6"
+                                bind:value=otp_code
+                                on:input=move |ev| {
+                                    let value = event_target_value(&ev);
+                                    // Only allow digits
+                                    let digits: String = value.chars().filter(|c| c.is_ascii_digit()).take(6).collect();
+                                    otp_code.set(digits);
+                                }
+                            />
+                            <button 
+                                class="btn btn-accent otp-verify-btn"
+                                on:click=on_verify_otp
+                                disabled=move || verify_otp_action.pending().get() || otp_code.get().len() != 6
+                            >
+                                {move || if verify_otp_action.pending().get() {
+                                    "Verifying...".into_view()
+                                } else {
+                                    "Verify".into_view()
+                                }}
+                            </button>
+                        </div>
+                        
+                        <Show when=move || !otp_message.get().is_empty()>
+                            <p class="otp-message">{otp_message}</p>
+                        </Show>
+                        
+                        <button 
+                            class="otp-resend"
+                            on:click=move |_| {
+                                if let Some(data) = pending_registration_data.get() {
+                                    send_otp_action.dispatch(data.email);
+                                }
+                            }
+                            disabled=move || send_otp_action.pending().get()
+                        >
+                            {move || if send_otp_action.pending().get() {
+                                "Resending...".into_view()
+                            } else {
+                                "Resend Code".into_view()
+                            }}
+                        </button>
+                    </div>
+                </div>
+            </Show>
         </div>
     }
 }

@@ -3,6 +3,8 @@ use crate::user_context::get_current_user;
 use chrono::Utc;
 use leptos::prelude::*;
 
+
+
 #[component]
 pub fn Statistics() -> impl IntoView {
     // Minimal, unstyled baseline to rebuild from scratch
@@ -176,6 +178,65 @@ pub fn Statistics() -> impl IntoView {
                         <option value="Weekly">"Weekly"</option>
                     </select>
                 </label>
+
+                <button class="btn btn-outline" style="margin-left:12px;" on:click=move |_| {
+                    #[cfg(feature = "hydrate")]
+                    {
+                        use leptos::task::spawn_local;
+                        use wasm_bindgen::JsCast;
+                        
+                        spawn_local(async move {
+                            if let Some(email) = current_user.get().map(|u| u.email_address) {
+                                match export_attendance_data(
+                                    email,
+                                    selected_module.get(),
+                                    Some(timeframe.get()),
+                                    if timeframe.get() == "Weekly" { Some(selected_month.get()) } else { None }
+                                ).await {
+                                    Ok(csv_data) => {
+                                        // Create and download CSV file
+                                        let blob = web_sys::Blob::new_with_str_sequence_and_options(
+                                            &js_sys::Array::of1(&wasm_bindgen::JsValue::from_str(&csv_data)),
+                                            &{
+                                                let options = web_sys::BlobPropertyBag::new();
+                                                options.set_type("text/csv");
+                                                options
+                                            }
+                                        ).unwrap();
+                                        
+                                        let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
+                                        let window = web_sys::window().unwrap();
+                                        let document = window.document().unwrap();
+                                        let a = document.create_element("a").unwrap();
+                                        a.set_attribute("href", &url).unwrap();
+                                        
+                                        let filename = if let Some(module) = selected_module.get() {
+                                            format!("attendance_{}_{}.csv", module, chrono::Utc::now().format("%Y%m%d"))
+                                        } else {
+                                            format!("attendance_all_modules_{}.csv", chrono::Utc::now().format("%Y%m%d"))
+                                        };
+                                        a.set_attribute("download", &filename).unwrap();
+                                        
+                                        let html_element = a.dyn_into::<web_sys::HtmlElement>().unwrap();
+                                        html_element.click();
+                                        
+                                        web_sys::Url::revoke_object_url(&url).unwrap();
+                                    }
+                                    Err(e) => {
+                                        web_sys::console::error_1(&format!("Export failed: {}", e).into());
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    #[cfg(not(feature = "hydrate"))]
+                    {
+                        // Server-side: do nothing or show message
+                        leptos::logging::log!("Export only available in browser");
+                    }
+                }>
+                    "📊 Export CSV"
+                </button>
 
                 <Show when=move || timeframe.get() == "Weekly">
                     <span style="margin-left:12px;">

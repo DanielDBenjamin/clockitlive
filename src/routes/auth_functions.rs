@@ -6,6 +6,19 @@ use crate::database::{
 };
 use crate::types::{AuthResponse, BasicResponse, RegisterData};
 use leptos::prelude::*;
+#[cfg(feature = "ssr")]
+use std::collections::HashMap;
+#[cfg(feature = "ssr")]
+use std::sync::Mutex;
+#[cfg(feature = "ssr")]
+use rand::Rng;
+#[cfg(feature = "ssr")]
+use lettre::{
+    message::header::ContentType,
+    transport::smtp::authentication::Credentials,
+    Message, SmtpTransport, Transport,
+};
+
 
 #[server(RegisterUser, "/api")]
 pub async fn register_user(data: RegisterData) -> Result<AuthResponse, ServerFnError> {
@@ -209,5 +222,287 @@ pub async fn reset_password(
             success: false,
             message: e,
         }),
+    }
+}
+
+// Simple in-memory OTP storage (in production, use Redis or database)
+#[cfg(feature = "ssr")]
+lazy_static::lazy_static! {
+    static ref OTP_STORE: Mutex<HashMap<String, (String, std::time::SystemTime)>> = Mutex::new(HashMap::new());
+}
+
+#[cfg(feature = "ssr")]
+async fn send_email_otp(to_email: &str, otp: &str) -> Result<(), String> {
+    // Get email credentials from environment variables
+    let smtp_username = std::env::var("SMTP_USERNAME")
+        .map_err(|_| "SMTP_USERNAME environment variable not set")?;
+    let smtp_password = std::env::var("SMTP_PASSWORD")
+        .map_err(|_| "SMTP_PASSWORD environment variable not set")?;
+    let from_name = std::env::var("SMTP_FROM_NAME")
+        .unwrap_or_else(|_| "Clock It".to_string());
+
+    // Create email message
+    let email = Message::builder()
+        .from(format!("{} <{}>", from_name, smtp_username).parse()
+            .map_err(|e| format!("Invalid from address: {}", e))?)
+        .to(to_email.parse()
+            .map_err(|e| format!("Invalid to address: {}", e))?)
+        .subject("Your Clock It Verification Code")
+        .header(ContentType::TEXT_HTML)
+        .body(format!(
+            r#"
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
+                </div>
+                
+                <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
+                    <h2 style="color: #1f2937; margin-bottom: 20px;">Verify Your Email</h2>
+                    <p style="color: #4b5563; margin-bottom: 30px;">
+                        Enter this verification code to complete your Clock It registration:
+                    </p>
+                    
+                    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; display: inline-block;">
+                        <span style="font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px;">{}</span>
+                    </div>
+                    
+                    <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+                        This code will expire in 5 minutes for security reasons.
+                    </p>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <p style="color: #9ca3af; font-size: 12px;">
+                        If you didn't request this code, please ignore this email.
+                    </p>
+                </div>
+            </div>
+            "#, otp
+        ))
+        .map_err(|e| format!("Failed to build email: {}", e))?;
+
+    // Create SMTP transport
+    let creds = Credentials::new(smtp_username, smtp_password);
+    let mailer = SmtpTransport::relay("smtp.gmail.com")
+        .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
+        .credentials(creds)
+        .build();
+
+    // Send email
+    mailer.send(&email)
+        .map_err(|e| format!("Failed to send email: {}", e))?;
+
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+async fn send_password_reset_email(to_email: &str, otp: &str) -> Result<(), String> {
+    // Get email credentials from environment variables
+    let smtp_username = std::env::var("SMTP_USERNAME")
+        .map_err(|_| "SMTP_USERNAME environment variable not set")?;
+    let smtp_password = std::env::var("SMTP_PASSWORD")
+        .map_err(|_| "SMTP_PASSWORD environment variable not set")?;
+    let from_name = std::env::var("SMTP_FROM_NAME")
+        .unwrap_or_else(|_| "Clock It".to_string());
+
+    // Create password reset email message
+    let email = Message::builder()
+        .from(format!("{} <{}>", from_name, smtp_username).parse()
+            .map_err(|e| format!("Invalid from address: {}", e))?)
+        .to(to_email.parse()
+            .map_err(|e| format!("Invalid to address: {}", e))?)
+        .subject("Reset Your Clock It Password")
+        .header(ContentType::TEXT_HTML)
+        .body(format!(
+            r#"
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
+                </div>
+                
+                <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
+                    <h2 style="color: #1f2937; margin-bottom: 20px;">Reset Your Password</h2>
+                    <p style="color: #4b5563; margin-bottom: 30px;">
+                        Enter this verification code to reset your Clock It password:
+                    </p>
+                    
+                    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; display: inline-block;">
+                        <span style="font-size: 32px; font-weight: bold; color: #dc2626; letter-spacing: 8px;">{}</span>
+                    </div>
+                    
+                    <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+                        This code will expire in 5 minutes for security reasons.
+                    </p>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <p style="color: #9ca3af; font-size: 12px;">
+                        If you didn't request this password reset, please ignore this email.
+                    </p>
+                </div>
+            </div>
+            "#, otp
+        ))
+        .map_err(|e| format!("Failed to build email: {}", e))?;
+
+    // Create SMTP transport
+    let creds = Credentials::new(smtp_username, smtp_password);
+    let mailer = SmtpTransport::relay("smtp.gmail.com")
+        .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
+        .credentials(creds)
+        .build();
+
+    // Send email
+    mailer.send(&email)
+        .map_err(|e| format!("Failed to send email: {}", e))?;
+
+    Ok(())
+}
+
+#[server(SendOTP, "/api")]
+pub async fn send_otp(email: String) -> Result<BasicResponse, ServerFnError> {
+    if email.trim().is_empty() {
+        return Ok(BasicResponse {
+            success: false,
+            message: "Email is required".to_string(),
+        });
+    }
+
+    let email = email.trim().to_lowercase();
+    
+    // Generate 6-digit OTP (thread-safe)
+    let otp: String = {
+        let mut rng = rand::thread_rng();
+        (0..6).map(|_| rng.gen_range(0..10).to_string()).collect()
+    };
+    
+    // Store OTP with 5-minute expiry
+    let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(300);
+    {
+        let mut store = OTP_STORE.lock().unwrap();
+        store.insert(email.clone(), (otp.clone(), expiry));
+    }
+    
+    // Send email with OTP
+    match send_email_otp(&email, &otp).await {
+        Ok(()) => {
+            println!("✅ OTP email sent successfully to: {}", email);
+            Ok(BasicResponse {
+                success: true,
+                message: format!("Verification code sent to {}. Check your email.", email),
+            })
+        }
+        Err(e) => {
+            println!("❌ Failed to send OTP email to {}: {}", email, e);
+            // For development, still log the OTP so you can test
+            println!("🔑 OTP for testing: {}", otp);
+            Ok(BasicResponse {
+                success: false,
+                message: format!("Failed to send email: {}. Please try again.", e),
+            })
+        }
+    }
+}
+
+#[server(VerifyOTP, "/api")]
+pub async fn verify_otp(email: String, otp: String) -> Result<BasicResponse, ServerFnError> {
+    if email.trim().is_empty() || otp.trim().is_empty() {
+        return Ok(BasicResponse {
+            success: false,
+            message: "Email and OTP are required".to_string(),
+        });
+    }
+
+    let email = email.trim().to_lowercase();
+    let otp = otp.trim();
+    
+    let mut store = OTP_STORE.lock().unwrap();
+    
+    if let Some((stored_otp, expiry)) = store.get(&email) {
+        // Check if OTP is expired
+        if std::time::SystemTime::now() > *expiry {
+            store.remove(&email);
+            return Ok(BasicResponse {
+                success: false,
+                message: "OTP has expired. Please request a new one.".to_string(),
+            });
+        }
+        
+        // Check if OTP matches
+        if stored_otp == otp {
+            store.remove(&email); // Remove used OTP
+            return Ok(BasicResponse {
+                success: true,
+                message: "OTP verified successfully!".to_string(),
+            });
+        }
+    }
+    
+    Ok(BasicResponse {
+        success: false,
+        message: "Invalid OTP. Please try again.".to_string(),
+    })
+}
+
+#[server(SendPasswordResetOTP, "/api")]
+pub async fn send_password_reset_otp(email: String) -> Result<BasicResponse, ServerFnError> {
+    if email.trim().is_empty() {
+        return Ok(BasicResponse {
+            success: false,
+            message: "Email is required".to_string(),
+        });
+    }
+
+    let email = email.trim().to_lowercase();
+    
+    // Check if user exists
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+    
+    let user_exists = sqlx::query("SELECT emailAddress FROM users WHERE emailAddress = ?")
+        .bind(&email)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+    
+    if user_exists.is_none() {
+        return Ok(BasicResponse {
+            success: false,
+            message: "No account found with that email address".to_string(),
+        });
+    }
+    
+    // Generate 6-digit OTP (thread-safe)
+    let otp: String = {
+        let mut rng = rand::thread_rng();
+        (0..6).map(|_| rng.gen_range(0..10).to_string()).collect()
+    };
+    
+    // Store OTP with 5-minute expiry
+    let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(300);
+    {
+        let mut store = OTP_STORE.lock().unwrap();
+        store.insert(email.clone(), (otp.clone(), expiry));
+    }
+    
+    // Send password reset email
+    match send_password_reset_email(&email, &otp).await {
+        Ok(()) => {
+            println!("✅ Password reset OTP email sent successfully to: {}", email);
+            Ok(BasicResponse {
+                success: true,
+                message: format!("Password reset code sent to {}. Check your email.", email),
+            })
+        }
+        Err(e) => {
+            println!("❌ Failed to send password reset OTP email to {}: {}", email, e);
+            // For development, still log the OTP so you can test
+            println!("🔑 Password reset OTP for testing: {}", otp);
+            Ok(BasicResponse {
+                success: false,
+                message: format!("Failed to send email: {}. Please try again.", e),
+            })
+        }
     }
 }

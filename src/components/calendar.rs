@@ -1,3 +1,4 @@
+use crate::utils::module_visuals::module_visual;
 use chrono::{Datelike, Duration, Local, NaiveDate};
 use leptos::prelude::*;
 
@@ -69,10 +70,14 @@ pub fn Calendar(
         )
     };
 
-    let has_classes_on_date = move |day: u32| {
+    let class_variant_for_day = move |day: u32| -> Option<&'static str> {
         let month = current_month.get();
         let date_str = format!("{:04}-{:02}-{:02}", month.year(), month.month(), day);
-        classes.get().iter().any(|c| c.date == date_str)
+        classes
+            .get()
+            .iter()
+            .find(|c| c.date == date_str)
+            .map(|class| module_visual(&class.module_code).variant)
     };
 
     let select_date = move |day: u32| {
@@ -111,7 +116,7 @@ pub fn Calendar(
                             let date_str = format!("{:04}-{:02}-{:02}", month.year(), month.month(), day);
                             let is_today = date_str == today_str;
                             let is_selected = date_str == selected_date.get();
-                            let has_classes = has_classes_on_date(day);
+                            let dot_variant = class_variant_for_day(day).map(|v| v.to_string());
 
                             let class_names = if is_selected {
                                 "day day-selected"
@@ -127,9 +132,10 @@ pub fn Calendar(
                                     on:click=move |_| select_date(day)
                                 >
                                     <span class="day-number">{day}</span>
-                                    <Show when=move || has_classes>
-                                        <span class="day-dot"></span>
-                                    </Show>
+                                    {match dot_variant {
+                                        Some(variant) => view! { <span class=format!("day-dot {}", variant)></span> }.into_any(),
+                                        None => view! { <></> }.into_any(),
+                                    }}
                                 </div>
                             }.into_any()
                         }

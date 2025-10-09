@@ -4,6 +4,7 @@ use crate::routes::class_functions::{
 };
 use crate::routes::module_functions::get_module_fn;
 use crate::routes::student_functions::get_module_students;
+use crate::user_context::get_current_user;
 use leptos::prelude::*;
 use leptos::server_fn::ServerFnError;
 use leptos::web_sys::window;
@@ -13,6 +14,7 @@ use leptos_router::hooks::{use_navigate, use_query_map};
 #[component]
 pub fn ClassesPage() -> impl IntoView {
     let query = use_query_map();
+    let current_user = get_current_user();
 
     let module_code = Signal::derive(move || query.with(|q| q.get("module").unwrap_or_default()));
 
@@ -30,16 +32,23 @@ pub fn ClassesPage() -> impl IntoView {
         },
     );
 
-    // Load classes for the module
+    // Load classes for the module - all users see all classes in the module
     let classes_resource = Resource::new(
-        move || module_code.get(),
-        |code| async move {
+        move || (current_user.get(), module_code.get()),
+        |(user, code)| async move {
             if code.is_empty() {
                 return None;
             }
-            match get_module_classes_fn(code.clone()).await {
-                Ok(response) if response.success => Some(response.classes),
-                _ => None,
+            
+            match user {
+                Some(_user) => {
+                    let response = get_module_classes_fn(code.clone()).await;
+                    match response {
+                        Ok(response) if response.success => Some(response.classes),
+                        _ => None,
+                    }
+                }
+                None => None,
             }
         },
     );

@@ -153,6 +153,13 @@ async fn main() {
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use tokio::net::TcpListener;
 
+     // Load environment variables from .env file
+    if let Err(e) = dotenvy::dotenv() {
+        println!("⚠️  Could not load .env file: {}", e);
+    } else {
+        println!("✅ Loaded .env file successfully");
+    }
+
     println!("🚀 Starting Clock-It server...");
 
     clock_it::database::print_test_hash();
