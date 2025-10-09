@@ -22,6 +22,9 @@ pub fn Profile() -> impl IntoView {
     let reset_confirm_password = RwSignal::new(String::new());
     let reset_message = RwSignal::new(String::new());
     let reset_success = RwSignal::new(false);
+    // Password visibility state for reset inputs
+    let show_new_password = RwSignal::new(false);
+    let show_confirm_password = RwSignal::new(false);
 
     // Load current user data into form
     Effect::new(move |_| {
@@ -232,9 +235,80 @@ pub fn Profile() -> impl IntoView {
                     <div class="reset-inline">
                         <p class="muted">{move || format!("Reset for {}", email.get())}</p>
                         <label class="profile-label">"New Password"</label>
-                        <input class="input" type="password" bind:value=reset_new_password placeholder="Enter new password" />
+                        <div class="input-group">
+                            <input class="input" type=move || if show_new_password.get() { "text" } else { "password" } bind:value=reset_new_password placeholder="Enter new password" />
+                            <span 
+                                class="input-icon password-toggle" 
+                                on:click=move |_| show_new_password.set(!show_new_password.get())
+                                on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                                    if ev.key() == "Enter" || ev.key() == " " {
+                                        ev.prevent_default();
+                                        show_new_password.set(!show_new_password.get());
+                                    }
+                                }
+                                role="button"
+                                tabindex="0"
+                                aria-label=move || if show_new_password.get() { "Hide password" } else { "Show password" }
+                            >
+                                // Eye closed (hidden password)
+                                <svg 
+                                    width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                    style=move || if show_new_password.get() { "opacity: 0; position: absolute;" } else { "opacity: 1;" }
+                                >
+                                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                // Eye open with slash (visible password)
+                                <svg 
+                                    width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                    style=move || if show_new_password.get() { "opacity: 1;" } else { "opacity: 0; position: absolute;" }
+                                >
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20C5 20 1 12 1 12a18.45 18.45 0 0 1 2.06-2.94L17.94 17.94Z"/>
+                                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4C19 4 23 12 23 12a18.5 18.5 0 0 1-2.16 3.19L9.9 4.24Z"/>
+                                    <line x1="1" y1="1" x2="23" y2="23"/>
+                                </svg>
+                            </span>
+                        </div>
+
                         <label class="profile-label">"Confirm Password"</label>
-                        <input class="input" type="password" bind:value=reset_confirm_password placeholder="Confirm new password" />
+                        <div class="input-group">
+                            <input class="input" type=move || if show_confirm_password.get() { "text" } else { "password" } bind:value=reset_confirm_password placeholder="Confirm new password" />
+                            <span 
+                                class="input-icon password-toggle" 
+                                on:click=move |_| show_confirm_password.set(!show_confirm_password.get())
+                                on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                                    if ev.key() == "Enter" || ev.key() == " " {
+                                        ev.prevent_default();
+                                        show_confirm_password.set(!show_confirm_password.get());
+                                    }
+                                }
+                                role="button"
+                                tabindex="0"
+                                aria-label=move || if show_confirm_password.get() { "Hide password" } else { "Show password" }
+                            >
+                                // Eye closed (hidden password)
+                                <svg 
+                                    width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                    style=move || if show_confirm_password.get() { "opacity: 0; position: absolute;" } else { "opacity: 1;" }
+                                >
+                                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                // Eye open with slash (visible password)
+                                <svg 
+                                    width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                    style=move || if show_confirm_password.get() { "opacity: 1;" } else { "opacity: 0; position: absolute;" }
+                                >
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20C5 20 1 12 1 12a18.45 18.45 0 0 1 2.06-2.94L17.94 17.94Z"/>
+                                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4C19 4 23 12 23 12a18.5 18.5 0 0 1-2.16 3.19L9.9 4.24Z"/>
+                                    <line x1="1" y1="1" x2="23" y2="23"/>
+                                </svg>
+                            </span>
+                        </div>
                         <button class="btn btn-outline" type="button" on:click=on_reset_submit disabled=move || reset_pending.get()>{move || if reset_pending.get() { "Updating..." } else { "Update Password" }}</button>
                         <Show when=move || !reset_message.get().is_empty()>
                             <p class=move || if reset_success.get() { "success" } else { "error" }>{reset_message}</p>
