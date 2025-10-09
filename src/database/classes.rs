@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 use serde::{Deserialize, Serialize};
 
 // Class types available for both client and server
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Class {
     pub class_id: i64,
     pub module_code: String,
@@ -18,6 +18,7 @@ pub struct Class {
     pub time: String,
     pub duration_minutes: i32,
     pub status: String,
+    pub created_by: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -32,6 +33,7 @@ pub struct CreateClassRequest {
     pub date: String,
     pub time: String,
     pub duration_minutes: i32,
+    pub created_by: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateClassRequest {
@@ -64,6 +66,7 @@ pub struct DbClass {
     #[sqlx(rename = "duration_minutes")]
     duration_minutes: i32,
     status: String,
+    created_by: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -82,6 +85,7 @@ impl From<DbClass> for Class {
             time: db.time,
             duration_minutes: db.duration_minutes,
             status: db.status,
+            created_by: db.created_by,
             created_at: db.created_at,
             updated_at: db.updated_at,
         }
@@ -95,8 +99,8 @@ pub async fn create_class(pool: &SqlitePool, request: CreateClassRequest) -> Res
 
     let result = sqlx::query(
         r#"
-        INSERT INTO classes (moduleCode, title, venue, description, recurring, date, time, duration_minutes, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'upcoming', ?, ?)
+        INSERT INTO classes (moduleCode, title, venue, description, recurring, date, time, duration_minutes, status, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'upcoming', ?, ?, ?)
         "#,
     )
     .bind(&request.module_code)
@@ -107,6 +111,7 @@ pub async fn create_class(pool: &SqlitePool, request: CreateClassRequest) -> Res
     .bind(&request.date)
     .bind(&request.time)
     .bind(request.duration_minutes)
+    .bind(&request.created_by)
     .bind(&now)
     .bind(&now)
     .execute(pool)
@@ -153,13 +158,64 @@ pub async fn get_lecturer_classes(
 ) -> Result<Vec<Class>, String> {
     let classes = sqlx::query_as::<_, DbClass>(
         r#"
-        SELECT c.* FROM classes c
-        INNER JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
-        WHERE lm.lecturerEmailAddress = ?
+        SELECT DISTINCT c.* FROM classes c
+        LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+        LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
+        WHERE lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?
         ORDER BY c.date, c.time
         "#,
     )
     .bind(lecturer_email)
+    .bind(lecturer_email)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Database error: {}", e))?;
+
+    Ok(classes.into_iter().map(|c| c.into()).collect())
+}
+
+/// Get classes created by a specific user (for tutors to see only their classes)
+#[cfg(feature = "ssr")]
+pub async fn get_user_created_classes(
+    pool: &SqlitePool,
+    user_email: &str,
+) -> Result<Vec<Class>, String> {
+    let classes = sqlx::query_as::<_, DbClass>(
+        r#"
+        SELECT DISTINCT c.* FROM classes c
+        LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+        LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
+        WHERE (lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?) 
+          AND c.created_by = ?
+        ORDER BY c.date, c.time
+        "#,
+    )
+    .bind(user_email)
+    .bind(user_email)
+    .bind(user_email)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Database error: {}", e))?;
+
+    Ok(classes.into_iter().map(|c| c.into()).collect())
+}
+
+/// Get classes created by a specific user for a specific module (for tutors to see only their classes in a module)
+#[cfg(feature = "ssr")]
+pub async fn get_user_created_classes_for_module(
+    pool: &SqlitePool,
+    user_email: &str,
+    module_code: &str,
+) -> Result<Vec<Class>, String> {
+    let classes = sqlx::query_as::<_, DbClass>(
+        r#"
+        SELECT c.* FROM classes c
+        WHERE c.created_by = ? AND c.moduleCode = ?
+        ORDER BY c.date, c.time
+        "#,
+    )
+    .bind(user_email)
+    .bind(module_code)
     .fetch_all(pool)
     .await
     .map_err(|e| format!("Database error: {}", e))?;

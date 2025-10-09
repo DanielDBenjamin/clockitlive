@@ -90,12 +90,10 @@ pub async fn get_overall_stats(
                 )
             FROM attendance a
             JOIN classes c ON a.classID = c.classID
-            JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
-            WHERE c.moduleCode = ? AND lm.lecturerEmailAddress = ?
+            WHERE c.moduleCode = ?
             "#,
         )
         .bind(mc)
-        .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
         .unwrap_or(0.0)
@@ -145,15 +143,17 @@ pub async fn get_overall_stats(
         .await
         .unwrap_or(0)
     } else {
-        // Count distinct students across all modules taught by this lecturer
+        // Count distinct students across all modules taught by this user (lecturer or tutor)
         sqlx::query_scalar(
             r#"
             SELECT COUNT(DISTINCT ms.studentEmailAddress)
             FROM module_students ms
-            JOIN lecturer_module lm ON ms.moduleCode = lm.moduleCode
-            WHERE lm.lecturerEmailAddress = ?
+            LEFT JOIN lecturer_module lm ON ms.moduleCode = lm.moduleCode
+            LEFT JOIN module_tutor mt ON ms.moduleCode = mt.moduleCode
+            WHERE lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?
             "#,
         )
+        .bind(&lecturer_email)
         .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
@@ -169,15 +169,9 @@ pub async fn get_overall_stats(
             .unwrap_or(0)
     } else if let Some(mc) = &module_code {
         sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*) 
-            FROM classes c
-            JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
-            WHERE c.moduleCode = ? AND lm.lecturerEmailAddress = ?
-            "#,
+            r#"SELECT COUNT(*) FROM classes WHERE moduleCode = ?"#,
         )
         .bind(mc)
-        .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
         .unwrap_or(0)
@@ -186,10 +180,12 @@ pub async fn get_overall_stats(
             r#"
             SELECT COUNT(*) 
             FROM classes c
-            JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
-            WHERE lm.lecturerEmailAddress = ?
+            LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+            LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
+            WHERE lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?
             "#,
         )
+        .bind(&lecturer_email)
         .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
@@ -218,15 +214,12 @@ pub async fn get_overall_stats(
             SELECT COUNT(*)
             FROM attendance a
             JOIN classes c ON a.classID = c.classID
-            JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
             WHERE c.date = date('now')
             AND a.status IN ('absent', 'late')
             AND c.moduleCode = ?
-            AND lm.lecturerEmailAddress = ?
             "#,
         )
         .bind(mc)
-        .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
         .unwrap_or(0)
@@ -236,12 +229,14 @@ pub async fn get_overall_stats(
             SELECT COUNT(*)
             FROM attendance a
             JOIN classes c ON a.classID = c.classID
-            JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+            LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+            LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
             WHERE c.date = date('now')
             AND a.status IN ('absent', 'late')
-            AND lm.lecturerEmailAddress = ?
+            AND (lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?)
             "#,
         )
+        .bind(&lecturer_email)
         .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
@@ -269,15 +264,13 @@ pub async fn get_overall_stats(
             FROM (
                 SELECT COUNT(DISTINCT CASE WHEN a.status = 'present' THEN a.studentID END) as student_count
                 FROM classes c
-                JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
                 LEFT JOIN attendance a ON c.classID = a.classID
-                WHERE c.moduleCode = ? AND lm.lecturerEmailAddress = ?
+                WHERE c.moduleCode = ?
                 GROUP BY c.classID
             )
             "#
         )
         .bind(mc)
-        .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
         .unwrap_or(0.0)
@@ -288,13 +281,15 @@ pub async fn get_overall_stats(
             FROM (
                 SELECT COUNT(DISTINCT CASE WHEN a.status = 'present' THEN a.studentID END) as student_count
                 FROM classes c
-                JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+                LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+                LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
                 LEFT JOIN attendance a ON c.classID = a.classID
-                WHERE lm.lecturerEmailAddress = ?
+                WHERE lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?
                 GROUP BY c.classID
             )
             "#
         )
+        .bind(&lecturer_email)
         .bind(&lecturer_email)
         .fetch_one(&pool)
         .await
@@ -337,10 +332,8 @@ pub async fn get_weekly_trends(
                     ) as rate,
                     COUNT(DISTINCT c.classID) as class_cnt
                 FROM classes c
-                JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
                 LEFT JOIN attendance a ON c.classID = a.classID
                 WHERE c.moduleCode = ?
-                  AND lm.lecturerEmailAddress = ?
                   AND strftime('%Y', c.date) = strftime('%Y','now')
                 GROUP BY strftime('%Y-%m', c.date)
                 HAVING COUNT(a.attendanceID) > 0
@@ -348,7 +341,6 @@ pub async fn get_weekly_trends(
                 "#
             )
             .bind(mc)
-            .bind(&lecturer_email)
             .fetch_all(&pool)
             .await
             .unwrap_or_default()
@@ -363,15 +355,17 @@ pub async fn get_weekly_trends(
                     ) as rate,
                     COUNT(DISTINCT c.classID) as class_cnt
                 FROM classes c
-                JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+                LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+                LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
                 LEFT JOIN attendance a ON c.classID = a.classID
-                WHERE lm.lecturerEmailAddress = ?
+                WHERE (lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?)
                   AND strftime('%Y', c.date) = strftime('%Y','now')
                 GROUP BY strftime('%Y-%m', c.date)
                 HAVING COUNT(a.attendanceID) > 0
                 ORDER BY label ASC
                 "#
             )
+            .bind(&lecturer_email)
             .bind(&lecturer_email)
             .fetch_all(&pool)
             .await
@@ -392,17 +386,14 @@ pub async fn get_weekly_trends(
                        ) AS rate,
                        COUNT(DISTINCT c.classID) AS class_cnt
                 FROM classes c
-                JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
                 LEFT JOIN attendance a ON c.classID = a.classID
                 WHERE c.moduleCode = ?
-                  AND lm.lecturerEmailAddress = ?
                   AND strftime('%Y-%m', c.date) = ?
                 GROUP BY w
                 ORDER BY w ASC
                 "#
             )
             .bind(mc)
-            .bind(&lecturer_email)
             .bind(&month)
             .fetch_all(&pool)
             .await
@@ -430,14 +421,16 @@ pub async fn get_weekly_trends(
                        ) AS rate,
                        COUNT(DISTINCT c.classID) AS class_cnt
                 FROM classes c
-                JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+                LEFT JOIN lecturer_module lm ON c.moduleCode = lm.moduleCode
+                LEFT JOIN module_tutor mt ON c.moduleCode = mt.moduleCode
                 LEFT JOIN attendance a ON c.classID = a.classID
-                WHERE lm.lecturerEmailAddress = ?
+                WHERE (lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?)
                   AND strftime('%Y-%m', c.date) = ?
                 GROUP BY w
                 ORDER BY w ASC
                 "#
             )
+            .bind(&lecturer_email)
             .bind(&lecturer_email)
             .bind(&month)
             .fetch_all(&pool)
@@ -511,9 +504,10 @@ pub async fn get_most_missed_modules(
                 ) as absence_rate
             FROM modules m
             JOIN classes c ON m.moduleCode = c.moduleCode
-            JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
+            LEFT JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
+            LEFT JOIN module_tutor mt ON m.moduleCode = mt.moduleCode
             LEFT JOIN attendance a ON c.classID = a.classID
-            WHERE m.moduleCode = ? AND lm.lecturerEmailAddress = ?
+            WHERE m.moduleCode = ? AND (lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?)
             GROUP BY m.moduleCode, m.moduleTitle
             HAVING COUNT(a.attendanceID) > 0
             ORDER BY absence_rate DESC
@@ -521,6 +515,7 @@ pub async fn get_most_missed_modules(
             "#
         )
         .bind(mc)
+        .bind(&lecturer_email)
         .bind(&lecturer_email)
         .fetch_all(&pool)
         .await
@@ -537,15 +532,17 @@ pub async fn get_most_missed_modules(
                 ) as absence_rate
             FROM modules m
             JOIN classes c ON m.moduleCode = c.moduleCode
-            JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
+            LEFT JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
+            LEFT JOIN module_tutor mt ON m.moduleCode = mt.moduleCode
             LEFT JOIN attendance a ON c.classID = a.classID
-            WHERE lm.lecturerEmailAddress = ?
+            WHERE (lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?)
             GROUP BY m.moduleCode, m.moduleTitle
             HAVING COUNT(a.attendanceID) > 0
             ORDER BY absence_rate DESC
             LIMIT 5
             "#
         )
+        .bind(&lecturer_email)
         .bind(&lecturer_email)
         .fetch_all(&pool)
         .await
@@ -561,10 +558,10 @@ pub async fn get_most_missed_modules(
         .collect())
 }
 
-// Server function to get module options for dropdown
+// Server function to get module options for dropdown (supports both lecturers and tutors)
 #[server(GetModuleOptions, "/api")]
 pub async fn get_module_options(
-    lecturer_email: String,
+    user_email: String,
 ) -> Result<Vec<ModuleOption>, ServerFnError> {
     let pool = init_db_pool()
         .await
@@ -572,14 +569,16 @@ pub async fn get_module_options(
 
     let rows: Vec<(String, String)> = sqlx::query_as(
         r#"
-        SELECT m.moduleCode, m.moduleTitle
+        SELECT DISTINCT m.moduleCode, m.moduleTitle
         FROM modules m
-        JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
-        WHERE lm.lecturerEmailAddress = ?
+        LEFT JOIN lecturer_module lm ON m.moduleCode = lm.moduleCode
+        LEFT JOIN module_tutor mt ON m.moduleCode = mt.moduleCode
+        WHERE lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?
         ORDER BY m.moduleTitle
         "#,
     )
-    .bind(&lecturer_email)
+    .bind(&user_email)
+    .bind(&user_email)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -640,10 +639,12 @@ pub async fn get_module_student_attendance(
         .await
         .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
 
-    // Only allow for modules taught by this lecturer
+    // Only allow for modules taught by this lecturer or where they are a tutor
     let teaches: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM lecturer_module WHERE moduleCode = ? AND lecturerEmailAddress = ?)"
+        "SELECT EXISTS(SELECT 1 FROM lecturer_module WHERE moduleCode = ? AND lecturerEmailAddress = ?) OR EXISTS(SELECT 1 FROM module_tutor WHERE moduleCode = ? AND tutorEmailAddress = ?)"
     )
+    .bind(&module_code)
+    .bind(&lecturer_email)
     .bind(&module_code)
     .bind(&lecturer_email)
     .fetch_one(&pool)
@@ -748,10 +749,12 @@ pub async fn get_student_module_attendance_detail(
         .await
         .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
 
-    // Confirm lecturer teaches module
+    // Confirm lecturer teaches module or is a tutor for the module
     let teaches: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM lecturer_module WHERE moduleCode = ? AND lecturerEmailAddress = ?)"
+        "SELECT EXISTS(SELECT 1 FROM lecturer_module WHERE moduleCode = ? AND lecturerEmailAddress = ?) OR EXISTS(SELECT 1 FROM module_tutor WHERE moduleCode = ? AND tutorEmailAddress = ?)"
     )
+    .bind(&module_code)
+    .bind(&lecturer_email)
     .bind(&module_code)
     .bind(&lecturer_email)
     .fetch_one(&pool)
@@ -806,4 +809,60 @@ pub async fn get_module_enrollment_count(module_code: String) -> Result<i64, Ser
             .unwrap_or(0);
 
     Ok(count)
+}
+
+// Export attendance data to CSV format
+#[server(ExportAttendanceData, "/api")]
+pub async fn export_attendance_data(
+    lecturer_email: String,
+    module_code: Option<String>,
+    timeframe: Option<String>,
+    month: Option<String>,
+) -> Result<String, ServerFnError> {
+    let _pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    let mut csv_content = String::new();
+
+    if let Some(mc) = &module_code {
+        // Export student attendance data for specific module
+        csv_content.push_str("Student Name,Email,Present Classes,Total Classes,Attendance Rate (%)\n");
+        
+        let students = get_module_student_attendance(lecturer_email.clone(), mc.clone(), None).await?;
+        for student in students {
+            csv_content.push_str(&format!(
+                "\"{} {}\",{},{},{},{:.1}\n",
+                student.name,
+                student.surname,
+                student.email_address,
+                student.present,
+                student.total,
+                student.attendance_rate
+            ));
+        }
+    } else {
+        // Export overall statistics and trends
+        csv_content.push_str("Type,Period,Attendance Rate (%),Class Count\n");
+        
+        let trends = get_weekly_trends(lecturer_email.clone(), module_code.clone(), timeframe, month).await?;
+        for trend in trends {
+            csv_content.push_str(&format!(
+                "Trend,{},{:.1},{}\n",
+                trend.week,
+                trend.attendance_rate,
+                trend.class_count
+            ));
+        }
+        
+        // Add overall stats
+        let stats = get_overall_stats(lecturer_email, module_code, None).await?;
+        csv_content.push_str(&format!(
+            "Overall,All Time,{:.1},{}\n",
+            stats.attendance_rate,
+            stats.total_classes
+        ));
+    }
+
+    Ok(csv_content)
 }

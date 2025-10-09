@@ -4,6 +4,7 @@ use crate::routes::class_functions::{
 };
 use crate::routes::stats_functions::get_module_enrollment_count;
 use crate::user_context::get_current_user;
+use crate::utils::module_visuals::{module_visual, ModuleVisual};
 use chrono::{Local, NaiveTime};
 use leptos::prelude::*;
 use leptos::server_fn::ServerFnError;
@@ -28,15 +29,19 @@ pub fn Timetable() -> impl IntoView {
         },
     );
 
-    // Load all classes for the lecturer
+    // Load classes based on user role
     let classes_resource = Resource::new(
-        move || (current_user.get().map(|u| u.email_address.clone()), session_refresh_trigger.get()),
-        |(email, _)| async move {
-            match email {
-                Some(email) => match get_lecturer_classes_fn(email).await {
-                    Ok(response) if response.success => Some(response.classes),
-                    _ => None,
-                },
+        move || (current_user.get(), session_refresh_trigger.get()),
+        |(user, _)| async move {
+            match user {
+                Some(user) => {
+                    // Both lecturers and tutors see all classes in their modules
+                    let response = get_lecturer_classes_fn(user.email_address.clone()).await;
+                    match response {
+                        Ok(response) if response.success => Some(response.classes),
+                        _ => None,
+                    }
+                }
                 None => None,
             }
         },
@@ -395,27 +400,8 @@ fn TimetableRow(class: Class) -> impl IntoView {
         |code| async move { get_module_enrollment_count(code).await },
     );
 
-    // Determine color variant like Home page; use module initials as icon (ASCII only)
-    let hash = module_code_display.chars().map(|c| c as u32).sum::<u32>();
-    let (icon, variant) = match hash % 4 {
-        0 => ("</>", "mod-purp"),
-        1 => ("🗄️", "mod-blue"),
-        2 => ("🧩", "mod-orange"),
-        _ => ("🍃", "mod-green"),
-    };
-    let initials = {
-        let letters: String = module_code_display
-            .chars()
-            .filter(|c| c.is_ascii_alphabetic())
-            .take(3)
-            .collect();
-        let up = letters.to_uppercase();
-        if up.is_empty() {
-            "MOD".to_string()
-        } else {
-            up
-        }
-    };
+    // Determine consistent module visuals for timetable icon
+    let ModuleVisual { variant, label } = module_visual(&module_code_display);
     let class_icon_classes = format!("class-icon {}", variant);
 
     let location_status_display = location_status.clone();
@@ -423,8 +409,8 @@ fn TimetableRow(class: Class) -> impl IntoView {
 
     view! {
         <div class="card timetable-row">
-            <div class="row-left">
-                <div class=class_icon_classes>{initials}</div>
+                <div class="row-left">
+                <div class=class_icon_classes>{label.clone()}</div>
                 <div class="row-info">
                     <div class="row-title">{format!("{} - {}", module_code_display, class.title.clone())}</div>
                     <div class="row-meta muted">
@@ -446,7 +432,6 @@ fn TimetableRow(class: Class) -> impl IntoView {
                 <Show when=move || status_upcoming.get()>
                     <button
                         class="btn btn-primary"
-                        style="display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: center;"
                         disabled=move || start_pending.get()
                         on:click=move |_| {
                             if !start_pending.get() {
@@ -475,7 +460,6 @@ fn TimetableRow(class: Class) -> impl IntoView {
                     <A
                         href=start_href.clone()
                         attr:class="btn btn-outline"
-                        attr:style="display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: center;"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="7" height="7"></rect>
@@ -489,7 +473,6 @@ fn TimetableRow(class: Class) -> impl IntoView {
                 <A
                     href=edit_href
                     attr:class="btn btn-outline"
-                    attr:style="display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: center;"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>

@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use crate::database::{
     init_db_pool,
     modules::{
-        create_module, delete_module, get_lecturer_modules_with_stats, get_module, update_module,
+        create_module, delete_module, get_lecturer_modules_with_stats, get_tutor_modules_with_stats, get_module, update_module,
     },
 };
 
@@ -83,6 +83,29 @@ pub async fn get_lecturer_modules_fn(
         .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
 
     match get_lecturer_modules_with_stats(&pool, &lecturer_email).await {
+        Ok(modules) => Ok(ModulesListResponse {
+            success: true,
+            message: "Modules fetched successfully".to_string(),
+            modules,
+        }),
+        Err(e) => Ok(ModulesListResponse {
+            success: false,
+            message: e,
+            modules: vec![],
+        }),
+    }
+}
+
+/// Get all modules for the current tutor
+#[server(GetTutorModules, "/api")]
+pub async fn get_tutor_modules_fn(
+    tutor_email: String,
+) -> Result<ModulesListResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    match get_tutor_modules_with_stats(&pool, &tutor_email).await {
         Ok(modules) => Ok(ModulesListResponse {
             success: true,
             message: "Modules fetched successfully".to_string(),

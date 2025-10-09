@@ -1,13 +1,15 @@
 use chrono::{Duration, Local, NaiveDate, NaiveTime};
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_query_map};
 use qrcode::{render::svg, QrCode};
 use urlencoding::encode;
 
 use crate::routes::{
-    class_functions::{end_class_session_fn, get_active_class_session_fn, get_class_fn},
+    class_functions::{end_class_session_fn, get_active_class_session_fn, get_class_fn, record_manual_attendance_fn},
     helpers::build_return_path,
+    student_functions::get_module_students,
 };
 
 fn format_date_label(date_str: &str) -> (String, String) {
@@ -73,6 +75,9 @@ pub fn ClassQrPage() -> impl IntoView {
         Signal::derive(move || query.with(|q| q.get("origin").map(|s| s.to_string())));
 
     let last_return_path = RwSignal::new(String::new());
+    let show_manual_modal = RwSignal::new(false);
+    let search_term = RwSignal::new(String::new());
+    let manual_feedback = RwSignal::new(None::<(bool, String)>);
 
     let class_resource = Resource::new(
         move || class_id.get(),
@@ -131,6 +136,55 @@ pub fn ClassQrPage() -> impl IntoView {
                 }
             }
             leptos::logging::log!("===========================");
+        }
+    });
+
+    // Load students enrolled in the module
+    let students_resource = Resource::new(
+        move || class_resource.get().and_then(|c| c),
+        |class_opt| async move {
+            match class_opt {
+                Some(class) => match get_module_students(class.module_code.clone()).await {
+                    Ok(response) if response.success => Some(response.students),
+                    _ => None,
+                },
+                None => None,
+            }
+        },
+    );
+
+    // Manual attendance action
+    let manual_attendance_action = Action::new(move |(class_id, email): &(i64, String)| {
+        let class_id = *class_id;
+        let email = email.clone();
+        async move { record_manual_attendance_fn(class_id, email).await }
+    });
+
+    Effect::new(move |_| {
+        if let Some(result) = manual_attendance_action.value().get() {
+            match result {
+                Ok(response) => {
+                    manual_feedback.set(Some((response.success, response.message.clone())));
+                    if response.success {
+                        show_manual_modal.set(false);
+                        search_term.set(String::new());
+
+                        // Auto-dismiss success notification after 4 seconds
+                        let feedback = manual_feedback.clone();
+                        spawn_local(async move {
+                            #[cfg(not(feature = "ssr"))]
+                            {
+                                use gloo_timers::future::TimeoutFuture;
+                                TimeoutFuture::new(4000).await;
+                                feedback.set(None);
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    manual_feedback.set(Some((false, e.to_string())));
+                }
+            }
         }
     });
 
@@ -258,6 +312,16 @@ pub fn ClassQrPage() -> impl IntoView {
 
                                             <div class="qr-actions">
                                                 <A href=return_path.clone() attr:class="btn btn-outline">"Close"</A>
+                                                {if session_is_active {
+                                                    view! {
+                                                        <button
+                                                            class="btn btn-primary"
+                                                            on:click=move |_| show_manual_modal.set(true)
+                                                        >"Manual Check-in"</button>
+                                                    }.into_any()
+                                                } else {
+                                                    view! { <></> }.into_any()
+                                                }}
                                                 {if let Some(session_id) = active_session_id {
                                                     let return_path_clone = return_path.clone();
                                                     view! {
@@ -285,6 +349,140 @@ pub fn ClassQrPage() -> impl IntoView {
                         })
                     }}
                 </Suspense>
+
+                {/* Manual Attendance Modal */}
+                <Show when=move || show_manual_modal.get()>
+                    <div class="modal-overlay" on:click=move |_| show_manual_modal.set(false)>
+                        <div class="modal-content manual-attendance-modal" on:click=|e| e.stop_propagation()>
+                            <h2 class="modal-title">"Manual Check-in"</h2>
+                            <p class="modal-text muted">"Select a student to manually record their attendance"</p>
+
+                            {move || manual_feedback.get().map(|(success, message)| {
+                                let class_name = if success { "feedback success" } else { "feedback error" };
+                                view! {
+                                    <div class=class_name>{message}</div>
+                                }.into_any()
+                            }).unwrap_or_else(|| view! { <></> }.into_any())}
+
+                            <input
+                                class="input search-input"
+                                placeholder="Search by name or email..."
+                                bind:value=search_term
+                            />
+
+                            <Suspense fallback=move || view! { <div class="loading">"Loading students..."</div> }>
+                                {move || {
+                                    students_resource.get().map(|maybe_students| {
+                                        match maybe_students {
+                                            Some(students) if !students.is_empty() => {
+                                                let query = search_term.get().to_lowercase();
+                                                let filtered: Vec<_> = students.into_iter().filter(|s| {
+                                                    if query.trim().is_empty() {
+                                                        true
+                                                    } else {
+                                                        let q = query.as_str();
+                                                        s.name.to_lowercase().contains(q)
+                                                            || s.surname.to_lowercase().contains(q)
+                                                            || s.email_address.to_lowercase().contains(q)
+                                                    }
+                                                }).collect();
+
+                                                if filtered.is_empty() {
+                                                    view! {
+                                                        <div class="student-list-empty">"No students match your search"</div>
+                                                    }.into_any()
+                                                } else {
+                                                    view! {
+                                                        <div class="student-list">
+                                                            {filtered.into_iter().map(|student| {
+                                                                let email = student.email_address.clone();
+                                                                let full_name = format!("{} {}", student.name, student.surname);
+                                                                let student_email_display = student.email_address.clone();
+                                                                view! {
+                                                                    <button
+                                                                        class="student-item"
+                                                                        on:click=move |_| {
+                                                                            manual_attendance_action.dispatch((class_id.get(), email.clone()));
+                                                                        }
+                                                                        disabled=move || manual_attendance_action.pending().get()
+                                                                    >
+                                                                        <div class="student-info">
+                                                                            <div class="student-name">{full_name}</div>
+                                                                            <div class="student-email muted">{student_email_display}</div>
+                                                                        </div>
+                                                                    </button>
+                                                                }
+                                                            }).collect_view()}
+                                                        </div>
+                                                    }.into_any()
+                                                }
+                                            }
+                                            Some(_) => {
+                                                view! {
+                                                    <div class="student-list-empty">"No students enrolled in this module"</div>
+                                                }.into_any()
+                                            }
+                                            None => {
+                                                view! {
+                                                    <div class="student-list-empty">"Failed to load students"</div>
+                                                }.into_any()
+                                            }
+                                        }
+                                    })
+                                }}
+                            </Suspense>
+
+                            <div class="modal-actions">
+                                <button class="btn btn-outline" on:click=move |_| {
+                                    show_manual_modal.set(false);
+                                    search_term.set(String::new());
+                                    manual_feedback.set(None);
+                                }>"Cancel"</button>
+                            </div>
+                        </div>
+                    </div>
+                </Show>
+
+                {/* Manual Attendance Feedback Popup */}
+                <Show when=move || manual_feedback.get().is_some()>
+                    {move || manual_feedback.get().map(|(success, message)| {
+                        let popup_class = if success {
+                            "student-attendance-popup student-attendance-popup-success"
+                        } else {
+                            "student-attendance-popup student-attendance-popup-error"
+                        };
+                        view! {
+                            <div class="student-attendance-overlay">
+                                <div class=popup_class>
+                                    <div class="student-attendance-icon">
+                                        {if success {
+                                            view! {
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M9 12l2 2 4-4"/>
+                                                    <circle cx="12" cy="12" r="10"/>
+                                                </svg>
+                                            }.into_any()
+                                        } else {
+                                            view! {
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <circle cx="12" cy="12" r="10"/>
+                                                    <line x1="15" y1="9" x2="9" y2="15"/>
+                                                    <line x1="9" y1="9" x2="15" y2="15"/>
+                                                </svg>
+                                            }.into_any()
+                                        }}
+                                    </div>
+                                    <div class="student-attendance-title">
+                                        {if success { "Success!" } else { "Error" }}
+                                    </div>
+                                    <div class="student-attendance-message">
+                                        {message}
+                                    </div>
+                                </div>
+                            </div>
+                        }.into_any()
+                    }).unwrap_or_else(|| view! { <></> }.into_any())}
+                </Show>
             </div>
         </section>
     }

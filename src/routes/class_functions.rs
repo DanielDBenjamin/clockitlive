@@ -8,7 +8,7 @@ use crate::database::{
     class_sessions::{create_session, end_session, get_active_session, get_session_by_id},
     classes::{
         create_class, delete_class, get_class_by_id, get_lecturer_classes, get_module_classes,
-        update_class,
+        get_user_created_classes, get_user_created_classes_for_module, update_class,
     },
     init_db_pool,
 };
@@ -115,6 +115,7 @@ pub async fn create_class_fn(
     time: String,
     duration_minutes: i32,
     recurrence_count: Option<i32>, // How many instances to create
+    created_by: String, // Email of the user creating the class
 ) -> Result<ClassResponse, ServerFnError> {
     // Add logging
     println!("Creating class for module: '{}'", module_code);
@@ -186,6 +187,7 @@ pub async fn create_class_fn(
         date: date.clone(),
         time: time.clone(),
         duration_minutes,
+        created_by: Some(created_by.clone()),
     };
 
     // Create the first class
@@ -241,6 +243,7 @@ pub async fn create_class_fn(
                         date: next_date_str,
                         time: time.clone(),
                         duration_minutes,
+                        created_by: Some(created_by.clone()),
                     };
 
                     // Create each recurring instance
@@ -332,6 +335,45 @@ pub async fn get_lecturer_classes_fn(
             classes: vec![],
         }),
     }
+}
+
+/// Get classes created by a specific user (for tutors)
+#[server(GetUserCreatedClasses, "/api")]
+pub async fn get_user_created_classes_fn(user_email: String) -> Result<ClassesListResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    let classes = get_user_created_classes(&pool, &user_email)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to get user classes: {}", e)))?;
+
+    Ok(ClassesListResponse {
+        success: true,
+        message: "User classes retrieved successfully".to_string(),
+        classes,
+    })
+}
+
+/// Get classes created by a specific user for a specific module (for tutors on classes page)
+#[server(GetUserCreatedClassesForModule, "/api")]
+pub async fn get_user_created_classes_for_module_fn(
+    user_email: String, 
+    module_code: String
+) -> Result<ClassesListResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    let classes = get_user_created_classes_for_module(&pool, &user_email, &module_code)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to get user classes for module: {}", e)))?;
+
+    Ok(ClassesListResponse {
+        success: true,
+        message: "User classes for module retrieved successfully".to_string(),
+        classes,
+    })
 }
 
 /// Get a single class by ID
@@ -557,6 +599,11 @@ pub async fn rewrite_recurring_series_fn(
         .await
         .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
 
+    // Fetch the original class to preserve created_by field
+    let original_class = get_class_by_id(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to fetch original class: {}", e)))?;
+
     // 1) Find all upcoming classes that belong to the original series
     let series_class_ids: Vec<i64> = if let Some(orig_rec) = &original_recurring {
         sqlx::query_scalar(
@@ -649,6 +696,7 @@ pub async fn rewrite_recurring_series_fn(
                         date: next_date_str,
                         time: new_time.clone(),
                         duration_minutes: new_duration_minutes,
+                        created_by: original_class.created_by.clone(),
                     };
 
                     match create_class(&pool, req).await {
@@ -1217,4 +1265,124 @@ fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
     earth_radius_m * c
+}
+
+#[server(RecordManualAttendance, "/api")]
+pub async fn record_manual_attendance_fn(
+    class_id: i64,
+    student_email: String,
+) -> Result<RecordAttendanceResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    // Verify class exists and get active session
+    let _ = ensure_session_state(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(e))?;
+
+    // Verify session is active
+    let session = get_active_session(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to check session: {}", e)))?;
+
+    if session.is_none() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "No active session for this class".to_string(),
+        });
+    }
+
+    let session = session.unwrap();
+    if session.ended_at.is_some() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "Session has ended".to_string(),
+        });
+    }
+
+    // Verify student exists and is enrolled
+    if student_email.trim().is_empty() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "Missing student email".to_string(),
+        });
+    }
+
+    let student_id: Option<i64> =
+        sqlx::query_scalar("SELECT userID FROM users WHERE emailAddress = ? AND role = 'student'")
+            .bind(&student_email)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to lookup student: {}", e)))?;
+
+    let student_id = match student_id {
+        Some(id) => id,
+        None => {
+            return Ok(RecordAttendanceResponse {
+                success: false,
+                message: "Student not found".to_string(),
+            })
+        }
+    };
+
+    // Get class info to check module enrollment
+    let class = get_class_by_id(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to get class: {}", e)))?;
+
+    // Verify student is enrolled in the module
+    let is_enrolled: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM module_students WHERE moduleCode = ? AND studentEmailAddress = ?",
+    )
+    .bind(&class.module_code)
+    .bind(&student_email)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Failed to check enrollment: {}", e)))?;
+
+    if is_enrolled.is_none() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "Student is not enrolled in this module".to_string(),
+        });
+    }
+
+    let now = Utc::now().to_rfc3339();
+
+    // Check if attendance record already exists
+    let existing: Option<i64> = sqlx::query_scalar(
+        "SELECT attendanceID FROM attendance WHERE classID = ? AND studentID = ?",
+    )
+    .bind(class_id)
+    .bind(student_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Failed to check attendance: {}", e)))?;
+
+    if let Some(attendance_id) = existing {
+        sqlx::query(
+            "UPDATE attendance SET status = 'present', recorded_at = ?, notes = 'Manual check-in by lecturer' WHERE attendanceID = ?"
+        )
+        .bind(&now)
+        .bind(attendance_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to update attendance: {}", e)))?;
+    } else {
+        sqlx::query(
+            "INSERT INTO attendance (studentID, classID, status, recorded_at, notes) VALUES (?, ?, 'present', ?, 'Manual check-in by lecturer')"
+        )
+        .bind(student_id)
+        .bind(class_id)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to insert attendance: {}", e)))?;
+    }
+
+    Ok(RecordAttendanceResponse {
+        success: true,
+        message: "Attendance recorded manually".to_string(),
+    })
 }

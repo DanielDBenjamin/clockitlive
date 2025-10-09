@@ -752,29 +752,22 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1;
   flex-shrink: 0;
 }
+.student-module-icon.mod-purp { background: #E8DEFF; color: #6b21a8; }
+.student-module-icon.mod-blue { background: #DBEAFE; color: #2563eb; }
+.student-module-icon.mod-orange { background: #FFE5D0; color: #ea580c; }
+.student-module-icon.mod-green { background: #DCFCE7; color: #0f766e; }
+.student-module-icon.mod-rose { background: #FFE4E6; color: #e11d48; }
+.student-module-icon.mod-teal { background: #CCFBF1; color: #0f766e; }
+.student-module-icon.mod-amber { background: #FEF3C7; color: #b45309; }
+.student-module-icon.mod-slate { background: #E2E8F0; color: #334155; }
 
-.student-module-icon-purple {
-  background: #E8DEFF;
-  color: #6b21a8;
-}
-
-.student-module-icon-red {
-  background: #FFE0E0;
-  color: #c02626;
-}
-
-.student-module-icon-yellow {
-  background: #FFF4D6;
-  color: #b45309;
-}
-
-.student-module-icon-teal {
-  background: #D9F5F1;
-  color: #0f766e;
-}
 
 .student-module-info {
   flex: 1;

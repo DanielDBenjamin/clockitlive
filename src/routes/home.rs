@@ -1,9 +1,10 @@
 use crate::components::{Calendar, ClassList, Header, StatTile};
 use crate::database::modules::ModuleWithStats;
 use crate::routes::class_functions::get_lecturer_classes_fn;
-use crate::routes::module_functions::get_lecturer_modules_fn;
+use crate::routes::module_functions::{get_lecturer_modules_fn, get_tutor_modules_fn};
 use crate::user_context::get_current_user;
-use chrono::Local;
+use crate::utils::module_visuals::{module_visual, ModuleVisual};
+use chrono::{Local, NaiveDate};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
@@ -11,6 +12,7 @@ use leptos_router::hooks::use_navigate;
 #[component]
 pub fn HomePage() -> impl IntoView {
     let current_user = get_current_user();
+    let refresh_trigger = RwSignal::new(0);
 
     let greeting = move || -> String {
         let user = current_user.get();
@@ -27,39 +29,49 @@ pub fn HomePage() -> impl IntoView {
         }
     };
 
-    // Load modules
+    // Load modules based on user role
     let modules_resource = Resource::new(
-        move || current_user.get().map(|u| u.email_address.clone()),
-        |email| async move {
-            match email {
-                Some(email) => match get_lecturer_modules_fn(email).await {
-                    Ok(response) if response.success => Some(response.modules),
-                    _ => None,
+        move || current_user.get(),
+        |user| async move {
+            match user {
+                Some(user) => {
+                    let response = match user.role.as_str() {
+                        "tutor" => get_tutor_modules_fn(user.email_address.clone()).await,
+                        _ => get_lecturer_modules_fn(user.email_address.clone()).await,
+                    };
+                    match response {
+                        Ok(response) if response.success => Some(response.modules),
+                        _ => None,
+                    }
                 },
                 None => None,
             }
         },
     );
 
-    // Load all classes for the lecturer
+    // Load classes based on user role
     let classes_resource = Resource::new(
-        move || current_user.get().map(|u| u.email_address.clone()),
-        |email| async move {
-            match email {
-                Some(email) => match get_lecturer_classes_fn(email).await {
-                    Ok(response) if response.success => Some(response.classes),
-                    _ => None,
-                },
+        move || (current_user.get(), refresh_trigger.get()),
+        |(user, _)| async move {
+            match user {
+                Some(user) => {
+                    match get_lecturer_classes_fn(user.email_address.clone()).await {
+                        Ok(response) if response.success => Some(response.classes),
+                        _ => None,
+                    }
+                }
                 None => None,
             }
         },
     );
+
+    let today_key = Local::now().format("%Y-%m-%d").to_string();
 
     let all_classes =
         Signal::derive(move || classes_resource.get().and_then(|c| c).unwrap_or_default());
 
     // Selected date for calendar
-    let selected_date = RwSignal::new(Local::now().format("%Y-%m-%d").to_string());
+    let selected_date = RwSignal::new(today_key.clone());
 
     // Classes for selected date
     let filtered_classes = Signal::derive(move || {
@@ -77,6 +89,21 @@ pub fn HomePage() -> impl IntoView {
             .into_iter()
             .map(|c| c.duration_minutes.max(0))
             .sum::<i32>()
+    });
+
+    let selected_date_label = Signal::derive({
+        let selected_date = selected_date;
+        let today_key = today_key.clone();
+        move || {
+            let date_str = selected_date.get();
+            if date_str == today_key {
+                "Today's Classes".to_string()
+            } else {
+                NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
+                    .map(|date| format!("Classes for {}", date.format("%A, %d %B %Y")))
+                    .unwrap_or_else(|_| "Classes".to_string())
+            }
+        }
     });
 
     let todays_hours_display = Signal::derive(move || {
@@ -120,7 +147,17 @@ pub fn HomePage() -> impl IntoView {
                 <div class="home-left">
                     <div class="add-module-row">
                         <h3 class="heading">"Your Modules"</h3>
-                        <A href="/modules/new" attr:class="btn btn-primary btn-small">"+ Add Module"</A>
+                        {move || {
+                            current_user.get().map(|user| {
+                                if user.role == "lecturer" {
+                                    view! {
+                                        <A href="/modules/new" attr:class="btn btn-primary btn-small">"+ Add Module"</A>
+                                    }.into_any()
+                                } else {
+                                    view! { <></> }.into_any()
+                                }
+                            }).unwrap_or_else(|| view! { <></> }.into_any())
+                        }}
                     </div>
 
                     <div class="home-modules-scroll">
@@ -132,7 +169,10 @@ pub fn HomePage() -> impl IntoView {
                                             view! {
                                                 <div class="modules-grid">
                                                     {modules.into_iter().map(|module| {
-                                                        view! { <DynamicModuleCard module=module/> }
+                                                        let user_role = current_user.get()
+                                                            .map(|u| u.role.clone())
+                                                            .unwrap_or_else(|| "lecturer".to_string());
+                                                        view! { <DynamicModuleCard module=module user_role=user_role/> }
                                                     }).collect_view()}
                                                 </div>
                                             }.into_any()
@@ -171,7 +211,7 @@ pub fn HomePage() -> impl IntoView {
                         <span>"Schedule"</span>
                     </div>
                     <Calendar classes=all_classes on_date_select=on_date_select/>
-                    <h3 class="heading" style="margin-top:16px;">"Classes for " {move || selected_date.get()}</h3>
+                    <h3 class="heading" style="margin-top:16px;">{move || selected_date_label.get()}</h3>
                     <div class="classes-scroll-container">
                     <ClassList classes=filtered_classes/>
                     </div>
@@ -182,21 +222,15 @@ pub fn HomePage() -> impl IntoView {
 }
 
 #[component]
-fn DynamicModuleCard(module: ModuleWithStats) -> impl IntoView {
+fn DynamicModuleCard(module: ModuleWithStats, user_role: String) -> impl IntoView {
     let navigate = use_navigate();
 
-    let hash = module.module_code.chars().map(|c| c as u32).sum::<u32>();
-    let (icon, variant) = match hash % 4 {
-        0 => ("</>", "mod-purp"),
-        1 => ("🗄️", "mod-blue"),
-        2 => ("🧩", "mod-orange"),
-        _ => ("🍃", "mod-green"),
-    };
-
+    let module_code = module.module_code.clone();
+    let ModuleVisual { variant, label } = module_visual(&module_code);
     let icon_classes = format!("module-icon {}", variant);
-    let module_code_display = module.module_code.clone();
+    let module_code_display = module_code.clone();
     let student_count = module.student_count;
-    let href = format!("/classes?module={}", module.module_code);
+    let href = format!("/classes?module={}", module_code.clone());
 
     let go_card = {
         let href = href.clone();
@@ -218,7 +252,7 @@ fn DynamicModuleCard(module: ModuleWithStats) -> impl IntoView {
     };
     let value = navigate.clone();
     let go_new_class = {
-        let module_code = module.module_code.clone();
+        let module_code = module_code.clone();
         move |e: leptos::ev::MouseEvent| {
             e.stop_propagation();
             e.prevent_default();
@@ -230,7 +264,7 @@ fn DynamicModuleCard(module: ModuleWithStats) -> impl IntoView {
     };
 
     let go_edit_module = {
-        let module_code = module.module_code.clone();
+        let module_code = module_code.clone();
         move |e: leptos::ev::MouseEvent| {
             e.stop_propagation();
             e.prevent_default();
@@ -244,15 +278,21 @@ fn DynamicModuleCard(module: ModuleWithStats) -> impl IntoView {
     view! {
         <div class="module-card-link" role="link" tabindex="0" on:click=go_card on:keydown=go_card_key>
             <div class="card module-card">
-                <button
-                    class="module-edit-btn"
-                    on:click=go_edit_module
-                    title="Edit module"
-                    aria-label="Edit module"
-                >
-                    "✏️"
-                </button>
-                <div class=icon_classes aria-hidden="true">{icon}</div>
+                {if user_role == "lecturer" {
+                    view! {
+                        <button
+                            class="module-edit-btn"
+                            on:click=go_edit_module
+                            title="Edit module"
+                            aria-label="Edit module"
+                        >
+                            "✏️"
+                        </button>
+                    }.into_any()
+                } else {
+                    view! { <></> }.into_any()
+                }}
+                <div class=icon_classes aria-hidden="true">{label.clone()}</div>
                 <div class="module-body">
                     <div class="module-code">{module_code_display}</div>
                     <div class="module-name">{module.module_title.clone()}</div>
