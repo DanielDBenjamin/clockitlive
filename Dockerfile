@@ -6,14 +6,11 @@ RUN npm install -g sass
 
 WORKDIR /app
 
-# Copy only dependency files first for better caching
-COPY Cargo.toml Cargo.lock ./
+# Install required Rust targets and tooling up front so this layer stays cached
 RUN rustup target add wasm32-unknown-unknown
-
-# Install tools once (cached layer)
 RUN cargo install wasm-bindgen-cli --version 0.2.103
 
-# Now copy source code
+# Copy project sources
 COPY . .
 
 # Build
