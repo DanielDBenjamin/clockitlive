@@ -6,8 +6,9 @@ use qrcode::{render::svg, QrCode};
 use urlencoding::encode;
 
 use crate::routes::{
-    class_functions::{end_class_session_fn, get_active_class_session_fn, get_class_fn},
+    class_functions::{end_class_session_fn, get_active_class_session_fn, get_class_fn, record_manual_attendance_fn},
     helpers::build_return_path,
+    student_functions::get_module_students,
 };
 
 fn format_date_label(date_str: &str) -> (String, String) {
@@ -73,6 +74,9 @@ pub fn ClassQrPage() -> impl IntoView {
         Signal::derive(move || query.with(|q| q.get("origin").map(|s| s.to_string())));
 
     let last_return_path = RwSignal::new(String::new());
+    let show_manual_modal = RwSignal::new(false);
+    let search_term = RwSignal::new(String::new());
+    let manual_feedback = RwSignal::new(None::<(bool, String)>);
 
     let class_resource = Resource::new(
         move || class_id.get(),
@@ -131,6 +135,44 @@ pub fn ClassQrPage() -> impl IntoView {
                 }
             }
             leptos::logging::log!("===========================");
+        }
+    });
+
+    // Load students enrolled in the module
+    let students_resource = Resource::new(
+        move || class_resource.get().and_then(|c| c),
+        |class_opt| async move {
+            match class_opt {
+                Some(class) => match get_module_students(class.module_code.clone()).await {
+                    Ok(response) if response.success => Some(response.students),
+                    _ => None,
+                },
+                None => None,
+            }
+        },
+    );
+
+    // Manual attendance action
+    let manual_attendance_action = Action::new(move |(class_id, email): &(i64, String)| {
+        let class_id = *class_id;
+        let email = email.clone();
+        async move { record_manual_attendance_fn(class_id, email).await }
+    });
+
+    Effect::new(move |_| {
+        if let Some(result) = manual_attendance_action.value().get() {
+            match result {
+                Ok(response) => {
+                    manual_feedback.set(Some((response.success, response.message)));
+                    if response.success {
+                        show_manual_modal.set(false);
+                        search_term.set(String::new());
+                    }
+                }
+                Err(e) => {
+                    manual_feedback.set(Some((false, e.to_string())));
+                }
+            }
         }
     });
 
@@ -258,6 +300,16 @@ pub fn ClassQrPage() -> impl IntoView {
 
                                             <div class="qr-actions">
                                                 <A href=return_path.clone() attr:class="btn btn-outline">"Close"</A>
+                                                {if session_is_active {
+                                                    view! {
+                                                        <button
+                                                            class="btn btn-primary"
+                                                            on:click=move |_| show_manual_modal.set(true)
+                                                        >"Manual Check-in"</button>
+                                                    }.into_any()
+                                                } else {
+                                                    view! { <></> }.into_any()
+                                                }}
                                                 {if let Some(session_id) = active_session_id {
                                                     let return_path_clone = return_path.clone();
                                                     view! {
@@ -285,6 +337,99 @@ pub fn ClassQrPage() -> impl IntoView {
                         })
                     }}
                 </Suspense>
+
+                {/* Manual Attendance Modal */}
+                <Show when=move || show_manual_modal.get()>
+                    <div class="modal-overlay" on:click=move |_| show_manual_modal.set(false)>
+                        <div class="modal-content manual-attendance-modal" on:click=|e| e.stop_propagation()>
+                            <h2 class="modal-title">"Manual Check-in"</h2>
+                            <p class="modal-text muted">"Select a student to manually record their attendance"</p>
+
+                            {move || manual_feedback.get().map(|(success, message)| {
+                                let class_name = if success { "feedback success" } else { "feedback error" };
+                                view! {
+                                    <div class=class_name>{message}</div>
+                                }.into_any()
+                            }).unwrap_or_else(|| view! { <></> }.into_any())}
+
+                            <input
+                                class="input search-input"
+                                placeholder="Search by name or email..."
+                                bind:value=search_term
+                            />
+
+                            <Suspense fallback=move || view! { <div class="loading">"Loading students..."</div> }>
+                                {move || {
+                                    students_resource.get().map(|maybe_students| {
+                                        match maybe_students {
+                                            Some(students) if !students.is_empty() => {
+                                                let query = search_term.get().to_lowercase();
+                                                let filtered: Vec<_> = students.into_iter().filter(|s| {
+                                                    if query.trim().is_empty() {
+                                                        true
+                                                    } else {
+                                                        let q = query.as_str();
+                                                        s.name.to_lowercase().contains(q)
+                                                            || s.surname.to_lowercase().contains(q)
+                                                            || s.email_address.to_lowercase().contains(q)
+                                                    }
+                                                }).collect();
+
+                                                if filtered.is_empty() {
+                                                    view! {
+                                                        <div class="student-list-empty">"No students match your search"</div>
+                                                    }.into_any()
+                                                } else {
+                                                    view! {
+                                                        <div class="student-list">
+                                                            {filtered.into_iter().map(|student| {
+                                                                let email = student.email_address.clone();
+                                                                let full_name = format!("{} {}", student.name, student.surname);
+                                                                let student_email_display = student.email_address.clone();
+                                                                view! {
+                                                                    <button
+                                                                        class="student-item"
+                                                                        on:click=move |_| {
+                                                                            manual_attendance_action.dispatch((class_id.get(), email.clone()));
+                                                                        }
+                                                                        disabled=move || manual_attendance_action.pending().get()
+                                                                    >
+                                                                        <div class="student-info">
+                                                                            <div class="student-name">{full_name}</div>
+                                                                            <div class="student-email muted">{student_email_display}</div>
+                                                                        </div>
+                                                                    </button>
+                                                                }
+                                                            }).collect_view()}
+                                                        </div>
+                                                    }.into_any()
+                                                }
+                                            }
+                                            Some(_) => {
+                                                view! {
+                                                    <div class="student-list-empty">"No students enrolled in this module"</div>
+                                                }.into_any()
+                                            }
+                                            None => {
+                                                view! {
+                                                    <div class="student-list-empty">"Failed to load students"</div>
+                                                }.into_any()
+                                            }
+                                        }
+                                    })
+                                }}
+                            </Suspense>
+
+                            <div class="modal-actions">
+                                <button class="btn btn-outline" on:click=move |_| {
+                                    show_manual_modal.set(false);
+                                    search_term.set(String::new());
+                                    manual_feedback.set(None);
+                                }>"Cancel"</button>
+                            </div>
+                        </div>
+                    </div>
+                </Show>
             </div>
         </section>
     }

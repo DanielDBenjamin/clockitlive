@@ -1218,3 +1218,123 @@ fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
     earth_radius_m * c
 }
+
+#[server(RecordManualAttendance, "/api")]
+pub async fn record_manual_attendance_fn(
+    class_id: i64,
+    student_email: String,
+) -> Result<RecordAttendanceResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    // Verify class exists and get active session
+    let _ = ensure_session_state(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(e))?;
+
+    // Verify session is active
+    let session = get_active_session(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to check session: {}", e)))?;
+
+    if session.is_none() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "No active session for this class".to_string(),
+        });
+    }
+
+    let session = session.unwrap();
+    if session.ended_at.is_some() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "Session has ended".to_string(),
+        });
+    }
+
+    // Verify student exists and is enrolled
+    if student_email.trim().is_empty() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "Missing student email".to_string(),
+        });
+    }
+
+    let student_id: Option<i64> =
+        sqlx::query_scalar("SELECT userID FROM users WHERE emailAddress = ? AND role = 'student'")
+            .bind(&student_email)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to lookup student: {}", e)))?;
+
+    let student_id = match student_id {
+        Some(id) => id,
+        None => {
+            return Ok(RecordAttendanceResponse {
+                success: false,
+                message: "Student not found".to_string(),
+            })
+        }
+    };
+
+    // Get class info to check module enrollment
+    let class = get_class_by_id(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to get class: {}", e)))?;
+
+    // Verify student is enrolled in the module
+    let is_enrolled: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM module_students WHERE moduleCode = ? AND studentEmailAddress = ?",
+    )
+    .bind(&class.module_code)
+    .bind(&student_email)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Failed to check enrollment: {}", e)))?;
+
+    if is_enrolled.is_none() {
+        return Ok(RecordAttendanceResponse {
+            success: false,
+            message: "Student is not enrolled in this module".to_string(),
+        });
+    }
+
+    let now = Utc::now().to_rfc3339();
+
+    // Check if attendance record already exists
+    let existing: Option<i64> = sqlx::query_scalar(
+        "SELECT attendanceID FROM attendance WHERE classID = ? AND studentID = ?",
+    )
+    .bind(class_id)
+    .bind(student_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Failed to check attendance: {}", e)))?;
+
+    if let Some(attendance_id) = existing {
+        sqlx::query(
+            "UPDATE attendance SET status = 'present', recorded_at = ?, notes = 'Manual check-in by lecturer' WHERE attendanceID = ?"
+        )
+        .bind(&now)
+        .bind(attendance_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to update attendance: {}", e)))?;
+    } else {
+        sqlx::query(
+            "INSERT INTO attendance (studentID, classID, status, recorded_at, notes) VALUES (?, ?, 'present', ?, 'Manual check-in by lecturer')"
+        )
+        .bind(student_id)
+        .bind(class_id)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to insert attendance: {}", e)))?;
+    }
+
+    Ok(RecordAttendanceResponse {
+        success: true,
+        message: "Attendance recorded manually".to_string(),
+    })
+}
