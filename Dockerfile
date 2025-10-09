@@ -56,4 +56,4 @@ ENV CLOCK_IT_USE_TLS=false
 ENV LEPTOS_SITE_ROOT=/app/target/site
 ENV LEPTOS_SITE_PKG_DIR=pkg
 
-CMD ["./start.sh"]
+CMD ["/app/start.sh"]
