@@ -208,7 +208,7 @@ body {
   transition: box-shadow 150ms ease, transform 150ms ease;
 }
 .user-chip:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
-.user-chip .avatar { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+.user-chip .avatar { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; overflow: hidden; object-fit: cover; }
 .user-chip .name { font-weight: 600; color: #374151; }
 
 /* ============================================
