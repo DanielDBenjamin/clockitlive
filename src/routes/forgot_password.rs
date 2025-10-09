@@ -199,7 +199,7 @@ pub fn ForgotPassword() -> impl IntoView {
                                 class="btn btn-accent"
                                 on:click=on_send_otp
                                 disabled=move || send_otp_action.pending().get()
-                                style="min-width: 200px; justify-content: center;"
+                                style="min-width: 200px; justify-content: center; text-align: center;"
                             >
                                 {move || if send_otp_action.pending().get() {
                                     "Sending Code..."
@@ -233,7 +233,7 @@ pub fn ForgotPassword() -> impl IntoView {
                             <button
                                 class="btn btn-secondary"
                                 on:click=move |_| step.set(1)
-                                style="min-width: 120px;"
+                                style="min-width: 120px; text-align: center; display: flex; align-items: center; justify-content: center;"
                             >
                                 "Back"
                             </button>
@@ -241,7 +241,7 @@ pub fn ForgotPassword() -> impl IntoView {
                                 class="btn btn-accent"
                                 on:click=on_verify_otp
                                 disabled=move || verify_otp_action.pending().get() || otp_code.get().len() != 6
-                                style="min-width: 120px;"
+                                style="min-width: 120px; text-align: center; display: flex; align-items: center; justify-content: center;"
                             >
                                 {move || if verify_otp_action.pending().get() {
                                     "Verifying..."
@@ -258,7 +258,7 @@ pub fn ForgotPassword() -> impl IntoView {
                                     send_otp_action.dispatch(email.get());
                                 }
                                 disabled=move || send_otp_action.pending().get()
-                                style="border: none;"
+                                style="border: none; text-align: center;"
                             >
                                 {move || if send_otp_action.pending().get() {
                                     "Resending..."
@@ -317,7 +317,7 @@ pub fn ForgotPassword() -> impl IntoView {
                             <button
                                 class="btn btn-secondary"
                                 on:click=move |_| step.set(2)
-                                style="min-width: 120px;"
+                                style="min-width: 120px; text-align: center; display: flex; align-items: center; justify-content: center;"
                             >
                                 "Back"
                             </button>
@@ -325,7 +325,7 @@ pub fn ForgotPassword() -> impl IntoView {
                                 class="btn btn-accent"
                                 on:click=on_reset_password
                                 disabled=move || reset_password_action.pending().get()
-                                style="min-width: 120px;"
+                                style="min-width: 120px; text-align: center; display: flex; align-items: center; justify-content: center;"
                             >
                                 {move || if reset_password_action.pending().get() {
                                     "Updating..."
@@ -345,7 +345,7 @@ pub fn ForgotPassword() -> impl IntoView {
                             <p style="color: #10b981; font-weight: 600; margin-bottom: 20px;">
                                 "Password Updated Successfully!"
                             </p>
-                            <A href="/" attr:class="btn btn-accent" attr:style="min-width: 200px;">
+                            <A href="/" attr:class="btn btn-accent" attr:style="min-width: 200px; text-align: center; display: flex; align-items: center; justify-content: center;">
                                 "Sign In Now"
                             </A>
                         </div>
