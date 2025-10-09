@@ -901,31 +901,7 @@ pub async fn end_class_session_fn(session_id: i64) -> Result<ClassSessionRespons
             
             leptos::logging::log!("Session {} manually ended for class {}", session_id, session.class_id);
 
-            // Ensure students who didn't scan are marked absent to keep attendance complete.
-            let class_info = get_class_by_id(&pool, session.class_id)
-                .await
-                .map_err(|e| ServerFnError::new(format!("Failed to fetch class info: {}", e)))?;
-
-            let absent_recorded_at = Utc::now().to_rfc3339();
-            sqlx::query(
-                r#"
-                INSERT INTO attendance (studentID, classID, status, recorded_at, notes)
-                SELECT u.userID, ?, 'absent', ?, 'Marked absent when session ended'
-                FROM users u
-                INNER JOIN module_students ms ON ms.studentEmailAddress = u.emailAddress
-                WHERE ms.moduleCode = ? AND u.role = 'student'
-                  AND NOT EXISTS (
-                      SELECT 1 FROM attendance a WHERE a.classID = ? AND a.studentID = u.userID
-                  )
-                "#,
-            )
-            .bind(session.class_id)
-            .bind(&absent_recorded_at)
-            .bind(&class_info.module_code)
-            .bind(session.class_id)
-            .execute(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Failed to mark absentees: {}", e)))?;
+            // Note: Absentee marking now happens automatically in end_session()
 
             Ok(ClassSessionResponse {
                 success: true,

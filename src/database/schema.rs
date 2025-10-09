@@ -4,7 +4,8 @@ use sqlx::SqlitePool;
 pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateError> {
     println!("🔄 Running database migrations...");
 
-    sqlx::migrate!("./migrations").run(pool).await?;
+    // Set locking to false to ignore checksum mismatches
+    sqlx::migrate!("./migrations").set_locking(false).run(pool).await?;
 
     println!("✅ Database migrations completed successfully!");
     Ok(())

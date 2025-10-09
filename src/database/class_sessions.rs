@@ -111,6 +111,15 @@ pub async fn create_session(
 pub async fn end_session(pool: &SqlitePool, session_id: i64) -> Result<ClassSession, String> {
     let now = Utc::now().to_rfc3339();
 
+    // First, get the session to find the class_id
+    let session =
+        sqlx::query_as::<_, DbClassSession>("SELECT * FROM class_sessions WHERE sessionID = ?")
+            .bind(session_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("Failed to fetch session: {}", e))?;
+
+    // End the session
     sqlx::query("UPDATE class_sessions SET ended_at = ? WHERE sessionID = ? AND ended_at IS NULL")
         .bind(&now)
         .bind(session_id)
@@ -118,14 +127,43 @@ pub async fn end_session(pool: &SqlitePool, session_id: i64) -> Result<ClassSess
         .await
         .map_err(|e| format!("Failed to end session: {}", e))?;
 
-    let session =
+    // Get the module code for this class
+    let class_module: (String,) = sqlx::query_as("SELECT moduleCode FROM classes WHERE classID = ?")
+        .bind(session.class_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Failed to fetch class module: {}", e))?;
+
+    // Mark all students who didn't attend as absent
+    sqlx::query(
+        r#"
+        INSERT INTO attendance (studentID, classID, status, recorded_at, notes)
+        SELECT u.userID, ?, 'absent', ?, 'Marked absent when session ended'
+        FROM users u
+        INNER JOIN module_students ms ON ms.studentEmailAddress = u.emailAddress
+        WHERE ms.moduleCode = ? AND u.role = 'student'
+          AND NOT EXISTS (
+              SELECT 1 FROM attendance a WHERE a.classID = ? AND a.studentID = u.userID
+          )
+        "#,
+    )
+    .bind(session.class_id)
+    .bind(&now)
+    .bind(&class_module.0)
+    .bind(session.class_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to mark absentees: {}", e))?;
+
+    // Fetch the updated session
+    let updated_session =
         sqlx::query_as::<_, DbClassSession>("SELECT * FROM class_sessions WHERE sessionID = ?")
             .bind(session_id)
             .fetch_one(pool)
             .await
             .map_err(|e| format!("Failed to fetch ended session: {}", e))?;
 
-    Ok(session.into())
+    Ok(updated_session.into())
 }
 
 #[cfg(feature = "ssr")]

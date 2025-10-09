@@ -327,7 +327,7 @@ pub async fn get_weekly_trends(
                 SELECT strftime('%Y-%m', c.date) as label,
                     COALESCE(
                         CAST(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS REAL) * 100.0 /
-                        NULLIF(CAST(COUNT(*) AS REAL), 0),
+                        NULLIF(CAST(COUNT(DISTINCT c.classID) * (SELECT COUNT(*) FROM module_students WHERE moduleCode = ?) AS REAL), 0),
                         0.0
                     ) as rate,
                     COUNT(DISTINCT c.classID) as class_cnt
@@ -336,10 +336,10 @@ pub async fn get_weekly_trends(
                 WHERE c.moduleCode = ?
                   AND strftime('%Y', c.date) = strftime('%Y','now')
                 GROUP BY strftime('%Y-%m', c.date)
-                HAVING COUNT(a.attendanceID) > 0
                 ORDER BY label ASC
                 "#
             )
+            .bind(mc)
             .bind(mc)
             .fetch_all(&pool)
             .await
@@ -350,7 +350,7 @@ pub async fn get_weekly_trends(
                 SELECT strftime('%Y-%m', c.date) as label,
                     COALESCE(
                         CAST(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS REAL) * 100.0 /
-                        NULLIF(CAST(COUNT(*) AS REAL), 0),
+                        NULLIF(CAST(COUNT(a.attendanceID) AS REAL), 0),
                         0.0
                     ) as rate,
                     COUNT(DISTINCT c.classID) as class_cnt
@@ -361,7 +361,6 @@ pub async fn get_weekly_trends(
                 WHERE (lm.lecturerEmailAddress = ? OR mt.tutorEmailAddress = ?)
                   AND strftime('%Y', c.date) = strftime('%Y','now')
                 GROUP BY strftime('%Y-%m', c.date)
-                HAVING COUNT(a.attendanceID) > 0
                 ORDER BY label ASC
                 "#
             )
@@ -381,7 +380,7 @@ pub async fn get_weekly_trends(
                 SELECT (((CAST(strftime('%d', c.date) AS INTEGER) - 1) / 7) + 1) AS w,
                        COALESCE(
                            CAST(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS REAL) * 100.0 /
-                           NULLIF(CAST(COUNT(a.attendanceID) AS REAL), 0),
+                           NULLIF(CAST(COUNT(DISTINCT c.classID) * (SELECT COUNT(*) FROM module_students WHERE moduleCode = ?) AS REAL), 0),
                            0.0
                        ) AS rate,
                        COUNT(DISTINCT c.classID) AS class_cnt
@@ -393,6 +392,7 @@ pub async fn get_weekly_trends(
                 ORDER BY w ASC
                 "#
             )
+            .bind(mc)
             .bind(mc)
             .bind(&month)
             .fetch_all(&pool)

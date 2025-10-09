@@ -1,6 +1,5 @@
 -- Seed data for Cape College-like schema
 -- Generated: 2025-10-07 09:36:16
-BEGIN TRANSACTION;
 INSERT INTO users (name,surname,emailAddress,password,role,created_at,updated_at) VALUES ('Lara','Lecturer','lara.lecturer@example.edu','simple_hash_17039136619706008904','lecturer', '2025-10-07 09:36:16', '2025-10-07 09:36:16');
 INSERT INTO users (name,surname,emailAddress,password,role,created_at,updated_at) VALUES ('Peter','Prof','peter.prof@example.edu','simple_hash_17039136619706008904','lecturer', '2025-10-07 09:36:16', '2025-10-07 09:36:16');
 INSERT INTO users (name,surname,emailAddress,password,role,created_at,updated_at) VALUES ('Tia','Tutor','tia.tutor@example.edu','simple_hash_17039136619706008904','tutor', '2025-10-07 09:36:16', '2025-10-07 09:36:16');
@@ -8769,4 +8768,3 @@ FROM classes c WHERE c.moduleCode='DBA201' AND c.date='2025-08-11' AND c.time='1
 INSERT INTO class_sessions (classID, started_at, ended_at, started_by, start_latitude, start_longitude, start_accuracy, location_radius)
 SELECT c.classID, '2025-08-13 10:55:00', '2025-08-13 12:35:00', 'peter.prof@example.edu', -33.932, 18.865, 15.0, 30.0
 FROM classes c WHERE c.moduleCode='DBA201' AND c.date='2025-08-13' AND c.time='11:00';
-COMMIT;
