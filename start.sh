@@ -38,14 +38,18 @@ if [ ! -f "$DATA_DIR/clock_it.db" ]; then
     echo "Database created at $DATA_DIR/clock_it.db"
 fi
 
-# Set environment variables for Railway
+# Set environment variables
 export DATABASE_URL="sqlite:$DATA_DIR/clock_it.db"
 export LEPTOS_SITE_ROOT="$SITE_ROOT"
 export LEPTOS_SITE_PKG_DIR="pkg"
 
+# Configure host and port for Railway
+export LEPTOS_SITE_ADDR="${HOST:-0.0.0.0}:${PORT:-8080}"
+
 echo "Starting application..."
 echo "DATABASE_URL: $DATABASE_URL"
 echo "LEPTOS_SITE_ROOT: $LEPTOS_SITE_ROOT"
+echo "LEPTOS_SITE_ADDR: $LEPTOS_SITE_ADDR"
 
 # Start the application
 exec "$BINARY"
