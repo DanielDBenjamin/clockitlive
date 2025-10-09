@@ -130,7 +130,6 @@ pub fn ClassesPage() -> impl IntoView {
                     </div>
                 </div>
                 <div class="header-actions">
-                    <button class="btn btn-outline">"⭳ Export"</button>
                     <A href=move || format!("/classes/new?module={}", module_code.get()) attr:class="btn btn-primary">"+ Add Class"</A>
                 </div>
             </div>
