@@ -2,6 +2,7 @@ use crate::components::QrScanner;
 use crate::routes::class_functions::record_session_attendance_fn;
 use crate::routes::student_functions::{get_student_schedule, StudentScheduleItem};
 use crate::user_context::get_current_user;
+use crate::utils::module_visuals::{module_visual, ModuleVisual};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
@@ -303,9 +304,8 @@ pub fn StudentHomePage() -> impl IntoView {
                                                 <div class="student-modules-list">
                                                     {classes
                                                         .into_iter()
-                                                        .enumerate()
-                                                        .map(|(index, class)| {
-                                                            schedule_card(class, index, current_date.clone(), dismissed_alerts)
+                                                        .map(|class| {
+                                                            schedule_card(class, current_date.clone(), dismissed_alerts)
                                                         })
                                                         .collect::<Vec<_>>()}
                                                 </div>
@@ -423,7 +423,6 @@ pub fn StudentHomePage() -> impl IntoView {
 
 fn schedule_card(
     class: StudentScheduleItem,
-    index: usize,
     current_date_iso: String,
     dismissed_alerts: RwSignal<HashMap<i64, String>>,
 ) -> impl IntoView {
@@ -439,18 +438,8 @@ fn schedule_card(
         venue_updated_at,
     } = class;
 
-    let color_class = match index % 4 {
-        0 => "purple",
-        1 => "red",
-        2 => "yellow",
-        _ => "teal",
-    };
-
-    let icon_text = module_code
-        .chars()
-        .find(|c| c.is_ascii_alphanumeric())
-        .map(|c| c.to_ascii_uppercase().to_string())
-        .unwrap_or_else(|| "•".to_string());
+    let ModuleVisual { variant, label } = module_visual(&module_code);
+    let icon_classes = format!("student-module-icon {}", variant);
 
     let venue_text = venue.unwrap_or_else(|| "Location TBA".to_string());
     let details = if class_title.trim().is_empty() {
@@ -509,8 +498,8 @@ let handle_card_click = move |_| {
                 <span class="venue-alert-dot"></span>
             })}
             <div class="student-module-time">{time}</div>
-            <div class={format!("student-module-icon student-module-icon-{}", color_class)}>
-                {icon_text}
+            <div class=icon_classes>
+                {label.clone()}
             </div>
             <div class="student-module-info">
                 <div class="student-module-name">{module_title}</div>

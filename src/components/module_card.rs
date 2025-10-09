@@ -1,3 +1,4 @@
+use crate::utils::module_visuals::{module_visual, ModuleVisual};
 use leptos::ev::{KeyboardEvent, MouseEvent};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
@@ -13,17 +14,9 @@ pub fn ModuleCard(
 ) -> impl IntoView {
     let navigate = use_navigate();
 
-    // Generate icon and color based on module code hash
-    let hash = module_code.chars().map(|c| c as u32).sum::<u32>();
-    let (icon, variant) = match hash % 4 {
-        0 => ("</>", "mod-purp"),
-        1 => ("🗄️", "mod-blue"),
-        2 => ("🧩", "mod-orange"),
-        _ => ("🍃", "mod-green"),
-    };
-
+    let ModuleVisual { variant, label } = module_visual(&module_code);
     let icon_classes = format!("module-icon {}", variant);
-    let href = format!("/classes?module={}", module_code);
+    let href = format!("/classes?module={}", module_code.clone());
 
     let go_card = {
         let href = href.clone();
@@ -66,7 +59,7 @@ pub fn ModuleCard(
             on:keydown=go_card_key
         >
             <div class="card module-card">
-                <div class=icon_classes aria-hidden="true">{icon}</div>
+                <div class=icon_classes aria-hidden="true">{label.clone()}</div>
                 <div class="module-body">
                     <div class="module-code">{code}</div>
                     <div class="module-name">{name}</div>

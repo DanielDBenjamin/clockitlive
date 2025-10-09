@@ -61,6 +61,7 @@ fn AppShell() -> impl IntoView {
                 || path.starts_with("/classes")
                 || path.starts_with("/modules")
                 || path.starts_with("/lecturer/profile")
+                || path.starts_with("/tutor/profile")
         })
     };
     let show_sidebar = {
@@ -105,6 +106,7 @@ fn AppShell() -> impl IntoView {
                     <Route path=StaticSegment("timetable") view=Timetable/>
                     <Route path=StaticSegment("statistics") view=Statistics/>
                     <Route path=(StaticSegment("lecturer"), StaticSegment("profile")) view=Profile/>
+                    <Route path=(StaticSegment("tutor"), StaticSegment("profile")) view=Profile/>
                     <Route path=(StaticSegment("classes"), StaticSegment("edit")) view=EditClass/>
                     <Route path=(StaticSegment("classes"), StaticSegment("qr")) view=ClassQrPage/>
                     <Route path=(StaticSegment("classes"), StaticSegment("qr"), StaticSegment("large")) view=ClassQrFullscreenPage/>
