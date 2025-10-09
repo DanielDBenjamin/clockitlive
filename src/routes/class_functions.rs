@@ -8,7 +8,7 @@ use crate::database::{
     class_sessions::{create_session, end_session, get_active_session, get_session_by_id},
     classes::{
         create_class, delete_class, get_class_by_id, get_lecturer_classes, get_module_classes,
-        update_class,
+        get_user_created_classes, get_user_created_classes_for_module, update_class,
     },
     init_db_pool,
 };
@@ -115,6 +115,7 @@ pub async fn create_class_fn(
     time: String,
     duration_minutes: i32,
     recurrence_count: Option<i32>, // How many instances to create
+    created_by: String, // Email of the user creating the class
 ) -> Result<ClassResponse, ServerFnError> {
     // Add logging
     println!("Creating class for module: '{}'", module_code);
@@ -186,6 +187,7 @@ pub async fn create_class_fn(
         date: date.clone(),
         time: time.clone(),
         duration_minutes,
+        created_by: Some(created_by.clone()),
     };
 
     // Create the first class
@@ -241,6 +243,7 @@ pub async fn create_class_fn(
                         date: next_date_str,
                         time: time.clone(),
                         duration_minutes,
+                        created_by: Some(created_by.clone()),
                     };
 
                     // Create each recurring instance
@@ -332,6 +335,45 @@ pub async fn get_lecturer_classes_fn(
             classes: vec![],
         }),
     }
+}
+
+/// Get classes created by a specific user (for tutors)
+#[server(GetUserCreatedClasses, "/api")]
+pub async fn get_user_created_classes_fn(user_email: String) -> Result<ClassesListResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    let classes = get_user_created_classes(&pool, &user_email)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to get user classes: {}", e)))?;
+
+    Ok(ClassesListResponse {
+        success: true,
+        message: "User classes retrieved successfully".to_string(),
+        classes,
+    })
+}
+
+/// Get classes created by a specific user for a specific module (for tutors on classes page)
+#[server(GetUserCreatedClassesForModule, "/api")]
+pub async fn get_user_created_classes_for_module_fn(
+    user_email: String, 
+    module_code: String
+) -> Result<ClassesListResponse, ServerFnError> {
+    let pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    let classes = get_user_created_classes_for_module(&pool, &user_email, &module_code)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to get user classes for module: {}", e)))?;
+
+    Ok(ClassesListResponse {
+        success: true,
+        message: "User classes for module retrieved successfully".to_string(),
+        classes,
+    })
 }
 
 /// Get a single class by ID
@@ -557,6 +599,11 @@ pub async fn rewrite_recurring_series_fn(
         .await
         .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
 
+    // Fetch the original class to preserve created_by field
+    let original_class = get_class_by_id(&pool, class_id)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to fetch original class: {}", e)))?;
+
     // 1) Find all upcoming classes that belong to the original series
     let series_class_ids: Vec<i64> = if let Some(orig_rec) = &original_recurring {
         sqlx::query_scalar(
@@ -649,6 +696,7 @@ pub async fn rewrite_recurring_series_fn(
                         date: next_date_str,
                         time: new_time.clone(),
                         duration_minutes: new_duration_minutes,
+                        created_by: original_class.created_by.clone(),
                     };
 
                     match create_class(&pool, req).await {

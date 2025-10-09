@@ -106,6 +106,10 @@ pub fn Register() -> impl IntoView {
                         on:click=move |_| role.set("Lecturer".to_string())
                     >"Lecturer"</button>
                     <button
+                        class=move || if role.get() == "Tutor" { "seg-btn active" } else { "seg-btn" }
+                        on:click=move |_| role.set("Tutor".to_string())
+                    >"Tutor"</button>
+                    <button
                         class=move || if role.get() == "Student" { "seg-btn active" } else { "seg-btn" }
                         on:click=move |_| role.set("Student".to_string())
                     >"Student"</button>
