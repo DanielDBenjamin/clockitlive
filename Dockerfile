@@ -55,5 +55,6 @@ EXPOSE 3000
 ENV CLOCK_IT_USE_TLS=false
 ENV LEPTOS_SITE_ROOT=/app/target/site
 ENV LEPTOS_SITE_PKG_DIR=pkg
+ENV LEPTOS_OUTPUT_NAME=clock-it
 
 CMD ["/app/start.sh"]
