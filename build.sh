@@ -7,6 +7,9 @@ cargo build --release --bin clock-it --no-default-features --features ssr
 echo "Building frontend WASM..."
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features hydrate --profile wasm-release --target-dir ./target/front
 
+echo "Preparing output directories..."
+mkdir -p target/site/pkg
+
 echo "Running wasm-bindgen..."
 # Don't reinstall, assume it's already installed in Docker
 wasm-bindgen --target web \
@@ -24,6 +27,7 @@ echo "Compiling SCSS..."
 sass style/main.scss target/site/pkg/clock-it.css
 
 echo "Copying binary and assets..."
+mkdir -p target/site
 cp target/release/clock-it ./clock-it
 [ -d "public" ] && cp -r public/* target/site/ 2>/dev/null || true
 
