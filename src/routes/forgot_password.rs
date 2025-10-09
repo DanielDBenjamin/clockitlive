@@ -258,6 +258,7 @@ pub fn ForgotPassword() -> impl IntoView {
                                     send_otp_action.dispatch(email.get());
                                 }
                                 disabled=move || send_otp_action.pending().get()
+                                style="border: none;"
                             >
                                 {move || if send_otp_action.pending().get() {
                                     "Resending..."
