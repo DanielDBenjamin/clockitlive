@@ -1,6 +1,7 @@
 use crate::user_context::get_current_user;
 use leptos::prelude::*;
 use leptos_router::components::A;
+use crate::components::ThemeSwitcher;
 use urlencoding::encode;
 
 #[component]
@@ -26,9 +27,19 @@ pub fn TopBar() -> impl IntoView {
     view! {
         <header class="topbar" role="banner">
             <div class="topbar-left">
-                <div class="brand"><A href="/home"><img src="/logo.png" alt="Logo"/></A></div>
+                <div class="brand">
+                    <A href="/home">
+                        <img
+                            src="logo.png"
+                            alt="Logo"
+                            class="clockit-logo"
+                            style="width:120px;height:32px;"
+                        />
+                    </A>
+                </div>
             </div>
             <div class="topbar-right">
+            <ThemeSwitcher/>
                 <A href="/lecturer/profile" attr:class="user-chip">
                     <img
                         class="avatar"

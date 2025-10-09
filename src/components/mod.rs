@@ -10,6 +10,8 @@ pub mod module_card_tailwind;
 pub mod qr_scanner;
 pub mod stat_tile;
 pub mod top_bar;
+pub mod clockit_logo;
+pub mod theme_switcher;
 
 pub use calendar::Calendar;
 pub use class_list::ClassList;
@@ -19,3 +21,6 @@ pub use module_card_tailwind::ModuleCard;
 pub use qr_scanner::QrScanner;
 pub use stat_tile::StatTile;
 pub use top_bar::TopBar;
+pub use clockit_logo::*;
+pub use theme_switcher::ThemeSwitcher;
+

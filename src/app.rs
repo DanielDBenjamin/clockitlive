@@ -13,6 +13,8 @@ use leptos_router::{
     components::{Route, Router, Routes},
     hooks::use_location,
 };
+use crate::components::theme_switcher::provide_theme_context;
+
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -35,8 +37,9 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
-
+    provide_theme_context();
     crate::user_context::init_user_context();
+
 
     view! {
         <Stylesheet id="leptos" href="/pkg/clock-it.css?v=20251007001"/>
