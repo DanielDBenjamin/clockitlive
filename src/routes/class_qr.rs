@@ -1,5 +1,6 @@
 use chrono::{Duration, Local, NaiveDate, NaiveTime};
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_query_map};
 use qrcode::{render::svg, QrCode};
@@ -163,10 +164,21 @@ pub fn ClassQrPage() -> impl IntoView {
         if let Some(result) = manual_attendance_action.value().get() {
             match result {
                 Ok(response) => {
-                    manual_feedback.set(Some((response.success, response.message)));
+                    manual_feedback.set(Some((response.success, response.message.clone())));
                     if response.success {
                         show_manual_modal.set(false);
                         search_term.set(String::new());
+
+                        // Auto-dismiss success notification after 4 seconds
+                        let feedback = manual_feedback.clone();
+                        spawn_local(async move {
+                            #[cfg(not(feature = "ssr"))]
+                            {
+                                use gloo_timers::future::TimeoutFuture;
+                                TimeoutFuture::new(4000).await;
+                                feedback.set(None);
+                            }
+                        });
                     }
                 }
                 Err(e) => {
@@ -429,6 +441,47 @@ pub fn ClassQrPage() -> impl IntoView {
                             </div>
                         </div>
                     </div>
+                </Show>
+
+                {/* Manual Attendance Feedback Popup */}
+                <Show when=move || manual_feedback.get().is_some()>
+                    {move || manual_feedback.get().map(|(success, message)| {
+                        let popup_class = if success {
+                            "student-attendance-popup student-attendance-popup-success"
+                        } else {
+                            "student-attendance-popup student-attendance-popup-error"
+                        };
+                        view! {
+                            <div class="student-attendance-overlay">
+                                <div class=popup_class>
+                                    <div class="student-attendance-icon">
+                                        {if success {
+                                            view! {
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M9 12l2 2 4-4"/>
+                                                    <circle cx="12" cy="12" r="10"/>
+                                                </svg>
+                                            }.into_any()
+                                        } else {
+                                            view! {
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <circle cx="12" cy="12" r="10"/>
+                                                    <line x1="15" y1="9" x2="9" y2="15"/>
+                                                    <line x1="9" y1="9" x2="15" y2="15"/>
+                                                </svg>
+                                            }.into_any()
+                                        }}
+                                    </div>
+                                    <div class="student-attendance-title">
+                                        {if success { "Success!" } else { "Error" }}
+                                    </div>
+                                    <div class="student-attendance-message">
+                                        {message}
+                                    </div>
+                                </div>
+                            </div>
+                        }.into_any()
+                    }).unwrap_or_else(|| view! { <></> }.into_any())}
                 </Show>
             </div>
         </section>
