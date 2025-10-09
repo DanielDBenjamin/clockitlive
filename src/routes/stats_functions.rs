@@ -810,3 +810,59 @@ pub async fn get_module_enrollment_count(module_code: String) -> Result<i64, Ser
 
     Ok(count)
 }
+
+// Export attendance data to CSV format
+#[server(ExportAttendanceData, "/api")]
+pub async fn export_attendance_data(
+    lecturer_email: String,
+    module_code: Option<String>,
+    timeframe: Option<String>,
+    month: Option<String>,
+) -> Result<String, ServerFnError> {
+    let _pool = init_db_pool()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database connection failed: {}", e)))?;
+
+    let mut csv_content = String::new();
+
+    if let Some(mc) = &module_code {
+        // Export student attendance data for specific module
+        csv_content.push_str("Student Name,Email,Present Classes,Total Classes,Attendance Rate (%)\n");
+        
+        let students = get_module_student_attendance(lecturer_email.clone(), mc.clone(), None).await?;
+        for student in students {
+            csv_content.push_str(&format!(
+                "\"{} {}\",{},{},{},{:.1}\n",
+                student.name,
+                student.surname,
+                student.email_address,
+                student.present,
+                student.total,
+                student.attendance_rate
+            ));
+        }
+    } else {
+        // Export overall statistics and trends
+        csv_content.push_str("Type,Period,Attendance Rate (%),Class Count\n");
+        
+        let trends = get_weekly_trends(lecturer_email.clone(), module_code.clone(), timeframe, month).await?;
+        for trend in trends {
+            csv_content.push_str(&format!(
+                "Trend,{},{:.1},{}\n",
+                trend.week,
+                trend.attendance_rate,
+                trend.class_count
+            ));
+        }
+        
+        // Add overall stats
+        let stats = get_overall_stats(lecturer_email, module_code, None).await?;
+        csv_content.push_str(&format!(
+            "Overall,All Time,{:.1},{}\n",
+            stats.attendance_rate,
+            stats.total_classes
+        ));
+    }
+
+    Ok(csv_content)
+}

@@ -213,14 +213,7 @@ pub fn Login() -> impl IntoView {
                     </div>
 
                     <p class="center" style="margin:10px 0 0;">
-                        <button class="link-button accent" on:click=move |ev: leptos::ev::MouseEvent| {
-                            ev.prevent_default();
-                            let next = !show_reset.get();
-                            show_reset.set(next);
-                            if next { reset_email.set(email.get()); }
-                            reset_message.set(String::new());
-                            reset_success.set(false);
-                        }>"Forgot password?"</button>
+                        <A href="/forgot-password" attr:class="link-button accent">"Forgot password?"</A>
                     </p>
                     <Show when=move || show_reset.get()>
                         <ActionForm action=reset_action>
