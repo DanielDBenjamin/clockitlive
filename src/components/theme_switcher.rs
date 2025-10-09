@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use leptos::wasm_bindgen::JsCast;
 
 #[derive(Clone, Copy)]
 pub struct ThemeContext {
