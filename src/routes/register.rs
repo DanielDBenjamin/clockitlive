@@ -1,9 +1,15 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::use_navigate;
 
 // Import the server functions and types
 use crate::routes::auth_functions::{register_user, send_otp, verify_otp};
 use crate::types::RegisterData;
+
+// Email validation function
+fn is_valid_email(email: &str) -> bool {
+    email.contains('@')
+}
 
 #[component]
 pub fn Register() -> impl IntoView {
@@ -44,21 +50,6 @@ pub fn Register() -> impl IntoView {
         async move { verify_otp(email, otp).await }
     });
 
-    let on_submit = move |_: leptos::ev::MouseEvent| {
-        message.set(String::new());
-        success.set(false);
-
-        let data = RegisterData {
-            name: name.get(),
-            surname: surname.get(),
-            email: email.get(),
-            password: password.get(),
-            confirm_password: confirm.get(),
-            role: role.get().to_lowercase(),
-        };
-
-        register_action.dispatch(data);
-    };
     let on_submit = move |_| {
         message.set(String::new());
         success.set(false);
@@ -68,6 +59,12 @@ pub fn Register() -> impl IntoView {
         if !terms_accepted.get() {
             show_terms_error.set(true);
             message.set("You must accept the Terms of Service to create an account".to_string());
+            return;
+        }
+
+        // Validate email format
+        if !is_valid_email(&email.get()) {
+            message.set("Please enter a valid email address".to_string());
             return;
         }
 

@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 use serde::{Deserialize, Serialize};
 
 // Class types available for both client and server
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Class {
     pub class_id: i64,
     pub module_code: String,
