@@ -12,13 +12,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 #[cfg(feature = "ssr")]
 use rand::Rng;
-#[cfg(feature = "ssr")]
-use lettre::{
-    message::header::ContentType,
-    transport::smtp::authentication::Credentials,
-    Message, SmtpTransport, Transport,
-};
-
 
 #[server(RegisterUser, "/api")]
 pub async fn register_user(data: RegisterData) -> Result<AuthResponse, ServerFnError> {
@@ -233,162 +226,138 @@ lazy_static::lazy_static! {
 
 #[cfg(feature = "ssr")]
 async fn send_email_otp(to_email: &str, otp: &str) -> Result<(), String> {
-    use std::time::Duration;
+    let resend_api_key = std::env::var("RESEND_API_KEY")
+        .map_err(|_| "RESEND_API_KEY environment variable not set")?;
+    let from_email = std::env::var("RESEND_FROM_EMAIL")
+        .unwrap_or_else(|_| "onboarding@resend.dev".to_string());
+
+    let client = reqwest::Client::new();
     
-    // Get email credentials from environment variables
-    let smtp_username = std::env::var("SMTP_USERNAME")
-        .map_err(|_| "SMTP_USERNAME environment variable not set")?;
-    let smtp_password = std::env::var("SMTP_PASSWORD")
-        .map_err(|_| "SMTP_PASSWORD environment variable not set")?;
-    let smtp_host = std::env::var("SMTP_HOST")
-        .unwrap_or_else(|_| "smtp.gmail.com".to_string());
-    let smtp_port = std::env::var("SMTP_PORT")
-        .unwrap_or_else(|_| "587".to_string())
-        .parse::<u16>()
-        .unwrap_or(587);
-    let from_name = std::env::var("SMTP_FROM_NAME")
-        .unwrap_or_else(|_| "Clock It".to_string());
-
-    println!("📧 Attempting to send email via {}:{}", smtp_host, smtp_port);
-
-    // Create email message
-    let email = Message::builder()
-        .from(format!("{} <{}>", from_name, smtp_username).parse()
-            .map_err(|e| format!("Invalid from address: {}", e))?)
-        .to(to_email.parse()
-            .map_err(|e| format!("Invalid to address: {}", e))?)
-        .subject("Your Clock It Verification Code")
-        .header(ContentType::TEXT_HTML)
-        .body(format!(
-            r#"
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="text-align: center; margin-bottom: 30px;">
-                    <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
-                </div>
-                
-                <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
-                    <h2 style="color: #1f2937; margin-bottom: 20px;">Verify Your Email</h2>
-                    <p style="color: #4b5563; margin-bottom: 30px;">
-                        Enter this verification code to complete your Clock It registration:
-                    </p>
-                    
-                    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; display: inline-block;">
-                        <span style="font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px;">{}</span>
-                    </div>
-                    
-                    <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
-                        This code will expire in 5 minutes for security reasons.
-                    </p>
-                </div>
-                
-                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                    <p style="color: #9ca3af; font-size: 12px;">
-                        If you didn't request this code, please ignore this email.
-                    </p>
-                </div>
+    let html_body = format!(
+        r#"
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
             </div>
-            "#, otp
-        ))
-        .map_err(|e| format!("Failed to build email: {}", e))?;
+            
+            <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
+                <h2 style="color: #1f2937; margin-bottom: 20px;">Verify Your Email</h2>
+                <p style="color: #4b5563; margin-bottom: 30px;">
+                    Enter this verification code to complete your Clock It registration:
+                </p>
+                
+                <div style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; display: inline-block;">
+                    <span style="font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px;">{}</span>
+                </div>
+                
+                <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+                    This code will expire in 5 minutes for security reasons.
+                </p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <p style="color: #9ca3af; font-size: 12px;">
+                    If you didn't request this code, please ignore this email.
+                </p>
+            </div>
+        </div>
+        "#, otp
+    );
 
-    // Create SMTP transport with timeout and proper configuration
-    let creds = Credentials::new(smtp_username, smtp_password);
-    
-    let mailer = SmtpTransport::relay(&smtp_host)
-        .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
-        .credentials(creds)
-        .timeout(Some(Duration::from_secs(10)))  // 10 second timeout
-        .port(smtp_port)  // Use configured port
-        .build();
+    let body = serde_json::json!({
+        "from": from_email,
+        "to": [to_email],
+        "subject": "Your Clock It Verification Code",
+        "html": html_body
+    });
 
-    println!("📤 Sending email to: {}", to_email);
-    
-    // Send email
-    mailer.send(&email)
-        .map_err(|e| format!("Failed to send email: {}. Check SMTP credentials and network.", e))?;
+    println!("📧 Sending email via Resend to: {}", to_email);
 
-    println!("✅ Email sent successfully");
-    Ok(())
+    let response = client
+        .post("https://api.resend.com/emails")
+        .header("Authorization", format!("Bearer {}", resend_api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send request: {}", e))?;
+
+    if response.status().is_success() {
+        println!("✅ Email sent successfully via Resend");
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Resend API error: {}", error_text))
+    }
 }
 
 #[cfg(feature = "ssr")]
 async fn send_password_reset_email(to_email: &str, otp: &str) -> Result<(), String> {
-    use std::time::Duration;
+    let resend_api_key = std::env::var("RESEND_API_KEY")
+        .map_err(|_| "RESEND_API_KEY environment variable not set")?;
+    let from_email = std::env::var("RESEND_FROM_EMAIL")
+        .unwrap_or_else(|_| "onboarding@resend.dev".to_string());
+
+    let client = reqwest::Client::new();
     
-    // Get email credentials from environment variables
-    let smtp_username = std::env::var("SMTP_USERNAME")
-        .map_err(|_| "SMTP_USERNAME environment variable not set")?;
-    let smtp_password = std::env::var("SMTP_PASSWORD")
-        .map_err(|_| "SMTP_PASSWORD environment variable not set")?;
-    let smtp_host = std::env::var("SMTP_HOST")
-        .unwrap_or_else(|_| "smtp.gmail.com".to_string());
-    let smtp_port = std::env::var("SMTP_PORT")
-        .unwrap_or_else(|_| "587".to_string())
-        .parse::<u16>()
-        .unwrap_or(587);
-    let from_name = std::env::var("SMTP_FROM_NAME")
-        .unwrap_or_else(|_| "Clock It".to_string());
-
-    println!("📧 Attempting to send password reset email via {}:{}", smtp_host, smtp_port);
-
-    // Create password reset email message
-    let email = Message::builder()
-        .from(format!("{} <{}>", from_name, smtp_username).parse()
-            .map_err(|e| format!("Invalid from address: {}", e))?)
-        .to(to_email.parse()
-            .map_err(|e| format!("Invalid to address: {}", e))?)
-        .subject("Reset Your Clock It Password")
-        .header(ContentType::TEXT_HTML)
-        .body(format!(
-            r#"
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="text-align: center; margin-bottom: 30px;">
-                    <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
-                </div>
-                
-                <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
-                    <h2 style="color: #1f2937; margin-bottom: 20px;">Reset Your Password</h2>
-                    <p style="color: #4b5563; margin-bottom: 30px;">
-                        Enter this verification code to reset your Clock It password:
-                    </p>
-                    
-                    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; display: inline-block;">
-                        <span style="font-size: 32px; font-weight: bold; color: #dc2626; letter-spacing: 8px;">{}</span>
-                    </div>
-                    
-                    <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
-                        This code will expire in 5 minutes for security reasons.
-                    </p>
-                </div>
-                
-                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                    <p style="color: #9ca3af; font-size: 12px;">
-                        If you didn't request this password reset, please ignore this email.
-                    </p>
-                </div>
+    let html_body = format!(
+        r#"
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #2563eb; margin: 0;">Clock It</h1>
             </div>
-            "#, otp
-        ))
-        .map_err(|e| format!("Failed to build email: {}", e))?;
+            
+            <div style="background: #f8fafc; border-radius: 8px; padding: 30px; text-align: center;">
+                <h2 style="color: #1f2937; margin-bottom: 20px;">Reset Your Password</h2>
+                <p style="color: #4b5563; margin-bottom: 30px;">
+                    Enter this verification code to reset your Clock It password:
+                </p>
+                
+                <div style="background: white; border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; display: inline-block;">
+                    <span style="font-size: 32px; font-weight: bold; color: #dc2626; letter-spacing: 8px;">{}</span>
+                </div>
+                
+                <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+                    This code will expire in 5 minutes for security reasons.
+                </p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <p style="color: #9ca3af; font-size: 12px;">
+                    If you didn't request this password reset, please ignore this email.
+                </p>
+            </div>
+        </div>
+        "#, otp
+    );
 
-    // Create SMTP transport with timeout and proper configuration
-    let creds = Credentials::new(smtp_username, smtp_password);
-    
-    let mailer = SmtpTransport::relay(&smtp_host)
-        .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
-        .credentials(creds)
-        .timeout(Some(Duration::from_secs(10)))  // 10 second timeout
-        .port(smtp_port)  // Use configured port
-        .build();
+    let body = serde_json::json!({
+        "from": from_email,
+        "to": [to_email],
+        "subject": "Reset Your Clock It Password",
+        "html": html_body
+    });
 
-    println!("📤 Sending password reset email to: {}", to_email);
-    
-    // Send email
-    mailer.send(&email)
-        .map_err(|e| format!("Failed to send email: {}. Check SMTP credentials and network.", e))?;
+    println!("📧 Sending password reset email via Resend to: {}", to_email);
 
-    println!("✅ Password reset email sent successfully");
-    Ok(())
+    let response = client
+        .post("https://api.resend.com/emails")
+        .header("Authorization", format!("Bearer {}", resend_api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send request: {}", e))?;
+
+    if response.status().is_success() {
+        println!("✅ Password reset email sent successfully via Resend");
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Resend API error: {}", error_text))
+    }
 }
 
 #[server(SendOTP, "/api")]
