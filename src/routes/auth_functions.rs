@@ -233,13 +233,23 @@ lazy_static::lazy_static! {
 
 #[cfg(feature = "ssr")]
 async fn send_email_otp(to_email: &str, otp: &str) -> Result<(), String> {
+    use std::time::Duration;
+    
     // Get email credentials from environment variables
     let smtp_username = std::env::var("SMTP_USERNAME")
         .map_err(|_| "SMTP_USERNAME environment variable not set")?;
     let smtp_password = std::env::var("SMTP_PASSWORD")
         .map_err(|_| "SMTP_PASSWORD environment variable not set")?;
+    let smtp_host = std::env::var("SMTP_HOST")
+        .unwrap_or_else(|_| "smtp.gmail.com".to_string());
+    let smtp_port = std::env::var("SMTP_PORT")
+        .unwrap_or_else(|_| "587".to_string())
+        .parse::<u16>()
+        .unwrap_or(587);
     let from_name = std::env::var("SMTP_FROM_NAME")
         .unwrap_or_else(|_| "Clock It".to_string());
+
+    println!("📧 Attempting to send email via {}:{}", smtp_host, smtp_port);
 
     // Create email message
     let email = Message::builder()
@@ -281,29 +291,45 @@ async fn send_email_otp(to_email: &str, otp: &str) -> Result<(), String> {
         ))
         .map_err(|e| format!("Failed to build email: {}", e))?;
 
-    // Create SMTP transport
+    // Create SMTP transport with timeout and proper configuration
     let creds = Credentials::new(smtp_username, smtp_password);
-    let mailer = SmtpTransport::relay("smtp.gmail.com")
+    
+    let mailer = SmtpTransport::relay(&smtp_host)
         .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
         .credentials(creds)
+        .timeout(Some(Duration::from_secs(10)))  // 10 second timeout
+        .port(smtp_port)  // Use configured port
         .build();
 
+    println!("📤 Sending email to: {}", to_email);
+    
     // Send email
     mailer.send(&email)
-        .map_err(|e| format!("Failed to send email: {}", e))?;
+        .map_err(|e| format!("Failed to send email: {}. Check SMTP credentials and network.", e))?;
 
+    println!("✅ Email sent successfully");
     Ok(())
 }
 
 #[cfg(feature = "ssr")]
 async fn send_password_reset_email(to_email: &str, otp: &str) -> Result<(), String> {
+    use std::time::Duration;
+    
     // Get email credentials from environment variables
     let smtp_username = std::env::var("SMTP_USERNAME")
         .map_err(|_| "SMTP_USERNAME environment variable not set")?;
     let smtp_password = std::env::var("SMTP_PASSWORD")
         .map_err(|_| "SMTP_PASSWORD environment variable not set")?;
+    let smtp_host = std::env::var("SMTP_HOST")
+        .unwrap_or_else(|_| "smtp.gmail.com".to_string());
+    let smtp_port = std::env::var("SMTP_PORT")
+        .unwrap_or_else(|_| "587".to_string())
+        .parse::<u16>()
+        .unwrap_or(587);
     let from_name = std::env::var("SMTP_FROM_NAME")
         .unwrap_or_else(|_| "Clock It".to_string());
+
+    println!("📧 Attempting to send password reset email via {}:{}", smtp_host, smtp_port);
 
     // Create password reset email message
     let email = Message::builder()
@@ -345,17 +371,23 @@ async fn send_password_reset_email(to_email: &str, otp: &str) -> Result<(), Stri
         ))
         .map_err(|e| format!("Failed to build email: {}", e))?;
 
-    // Create SMTP transport
+    // Create SMTP transport with timeout and proper configuration
     let creds = Credentials::new(smtp_username, smtp_password);
-    let mailer = SmtpTransport::relay("smtp.gmail.com")
+    
+    let mailer = SmtpTransport::relay(&smtp_host)
         .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
         .credentials(creds)
+        .timeout(Some(Duration::from_secs(10)))  // 10 second timeout
+        .port(smtp_port)  // Use configured port
         .build();
 
+    println!("📤 Sending password reset email to: {}", to_email);
+    
     // Send email
     mailer.send(&email)
-        .map_err(|e| format!("Failed to send email: {}", e))?;
+        .map_err(|e| format!("Failed to send email: {}. Check SMTP credentials and network.", e))?;
 
+    println!("✅ Password reset email sent successfully");
     Ok(())
 }
 
