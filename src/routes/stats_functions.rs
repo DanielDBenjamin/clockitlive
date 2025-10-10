@@ -662,22 +662,22 @@ pub async fn get_module_student_attendance(
                    u.name,
                    u.surname,
                    u.emailAddress,
-                   COALESCE(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END), 0) AS present_cnt,
-                   COALESCE(COUNT(a.attendanceID), 0) AS total_cnt,
+                   COALESCE(COUNT(DISTINCT CASE WHEN a.status = 'present' THEN c.classID END), 0) AS present_cnt,
+                   COALESCE(COUNT(DISTINCT c.classID), 0) AS total_cnt,
                    COALESCE(
-                     CASE WHEN COUNT(a.attendanceID) = 0 THEN 0.0
-                          ELSE (CAST(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS REAL) * 100.0)
-                               / CAST(COUNT(a.attendanceID) AS REAL)
+                     CASE WHEN COUNT(DISTINCT c.classID) = 0 THEN 0.0
+                          ELSE (CAST(COUNT(DISTINCT CASE WHEN a.status = 'present' THEN c.classID END) AS REAL) * 100.0)
+                               / CAST(COUNT(DISTINCT c.classID) AS REAL)
                      END, 0.0
                    ) AS rate
             FROM module_students ms
             JOIN users u ON u.emailAddress = ms.studentEmailAddress
-            LEFT JOIN classes c ON c.classID = ? AND c.moduleCode = ms.moduleCode
+            LEFT JOIN classes c ON c.classID = ? AND c.moduleCode = ms.moduleCode AND c.status IN ('completed', 'in_progress')
             LEFT JOIN attendance a ON a.classID = c.classID AND a.studentID = u.userID
             WHERE ms.moduleCode = ?
             GROUP BY u.userID, u.name, u.surname, u.emailAddress
             ORDER BY u.surname, u.name
-            "#
+            "#,
         )
         .bind(cid)
         .bind(&module_code)
@@ -691,22 +691,22 @@ pub async fn get_module_student_attendance(
                    u.name,
                    u.surname,
                    u.emailAddress,
-                   COALESCE(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END), 0) AS present_cnt,
-                   COALESCE(COUNT(a.attendanceID), 0) AS total_cnt,
+                   COALESCE(COUNT(DISTINCT CASE WHEN a.status = 'present' THEN c.classID END), 0) AS present_cnt,
+                   COALESCE(COUNT(DISTINCT c.classID), 0) AS total_cnt,
                    COALESCE(
-                     CASE WHEN COUNT(a.attendanceID) = 0 THEN 0.0
-                          ELSE (CAST(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS REAL) * 100.0)
-                               / CAST(COUNT(a.attendanceID) AS REAL)
+                     CASE WHEN COUNT(DISTINCT c.classID) = 0 THEN 0.0
+                          ELSE (CAST(COUNT(DISTINCT CASE WHEN a.status = 'present' THEN c.classID END) AS REAL) * 100.0)
+                               / CAST(COUNT(DISTINCT c.classID) AS REAL)
                      END, 0.0
                    ) AS rate
             FROM module_students ms
             JOIN users u ON u.emailAddress = ms.studentEmailAddress
-            LEFT JOIN classes c ON c.moduleCode = ms.moduleCode
+            LEFT JOIN classes c ON c.moduleCode = ms.moduleCode AND c.status IN ('completed', 'in_progress')
             LEFT JOIN attendance a ON a.classID = c.classID AND a.studentID = u.userID
             WHERE ms.moduleCode = ?
             GROUP BY u.userID, u.name, u.surname, u.emailAddress
             ORDER BY u.surname, u.name
-            "#
+            "#,
         )
         .bind(&module_code)
         .fetch_all(&pool)
