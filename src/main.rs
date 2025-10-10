@@ -83,6 +83,11 @@ fn phone_access_hint(port: u16, scheme: &str) -> (String, PhoneHintOrigin) {
 fn resolve_use_tls() -> bool {
     use std::env;
 
+    // Check if we're in Railway - disable TLS there as Railway provides it
+    if env::var("RAILWAY_ENVIRONMENT").is_ok() {
+        return false;
+    }
+
     match env::var("CLOCK_IT_USE_TLS") {
         Ok(raw) => match raw.trim() {
             "" => true,
@@ -108,6 +113,23 @@ fn resolve_port(use_tls: bool) -> u16 {
 
     let default_port = if use_tls { 3443 } else { 3000 };
 
+    // Check Railway's PORT environment variable first
+    if let Ok(raw) = env::var("PORT") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            match trimmed.parse::<u16>() {
+                Ok(port) if port != 0 => return port,
+                _ => {
+                    log!(
+                        "⚠️  Invalid PORT '{}'; checking CLOCK_IT_PORT instead.",
+                        raw
+                    );
+                }
+            }
+        }
+    }
+
+    // Fall back to CLOCK_IT_PORT
     if let Ok(raw) = env::var("CLOCK_IT_PORT") {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
@@ -140,9 +162,31 @@ fn server_scheme(use_tls: bool) -> &'static str {
 }
 
 #[cfg(feature = "ssr")]
+async fn debug_files() -> String {
+    let site_root = std::env::var("LEPTOS_SITE_ROOT").unwrap_or_else(|_| "target/site".to_string());
+    let pkg_path = format!("{}/pkg", site_root);
+    
+    let mut output = String::new();
+    output.push_str(&format!("LEPTOS_SITE_ROOT: {}\n", site_root));
+    output.push_str(&format!("PKG_PATH: {}\n\n", pkg_path));
+    
+    if let Ok(entries) = std::fs::read_dir(&pkg_path) {
+        output.push_str("Files in pkg:\n");
+        for entry in entries.flatten() {
+            output.push_str(&format!("  - {}\n", entry.file_name().to_string_lossy()));
+        }
+    } else {
+        output.push_str("ERROR: Could not read pkg directory\n");
+    }
+    
+    output
+}
+
+#[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
     use axum::Router;
+    use axum::routing::get;
     use axum_server::tls_rustls::RustlsConfig;
     use clock_it::app::*;
     use clock_it::database::{
@@ -152,19 +196,13 @@ async fn main() {
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use tokio::net::TcpListener;
-
-     // Load environment variables from .env file
-    if let Err(e) = dotenvy::dotenv() {
-        println!("⚠️  Could not load .env file: {}", e);
-    } else {
-        println!("✅ Loaded .env file successfully");
-    }
+    use tower_http::services::ServeDir;
 
     println!("🚀 Starting Clock-It server...");
 
     clock_it::database::print_test_hash();
 
-    let conf = get_configuration(None).unwrap();
+    let conf = get_configuration(Some("Cargo.toml")).unwrap();
     let leptos_options = conf.leptos_options;
 
     // Initialize database
@@ -197,11 +235,30 @@ async fn main() {
     // Generate routes
     let routes = generate_route_list(App);
 
+    // Configure static file serving
+    let pkg_path = format!("{}/pkg", leptos_options.site_root);
+    log!("📁 Serving static files from: {}", pkg_path);
+    
+    // Debug: verify files exist
+    if std::path::Path::new(&pkg_path).exists() {
+        log!("✅ pkg directory found");
+        if let Ok(entries) = std::fs::read_dir(&pkg_path) {
+            log!("📄 Files in pkg/:");
+            for entry in entries.flatten() {
+                log!("   - {}", entry.file_name().to_string_lossy());
+            }
+        }
+    } else {
+        log!("⚠️  WARNING: pkg directory not found at {}", pkg_path);
+    }
+
     let app = Router::new()
+        .route("/debug/files", get(debug_files))
         .leptos_routes(&leptos_options, routes, {
             let leptos_options = leptos_options.clone();
             move || shell(leptos_options.clone())
         })
+        .nest_service("/pkg", ServeDir::new(pkg_path))
         .fallback(leptos_axum::file_and_error_handler(shell))
         .with_state(leptos_options);
 

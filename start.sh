@@ -4,7 +4,7 @@
 if [ -d "/app" ]; then
     # Railway environment
     DATA_DIR="/app/data"
-    BINARY="./clock-it"
+    BINARY="/app/clock-it"
     SITE_ROOT="/app/target/site"
 else
     # Local environment
@@ -42,14 +42,18 @@ fi
 export DATABASE_URL="sqlite:$DATA_DIR/clock_it.db"
 export LEPTOS_SITE_ROOT="$SITE_ROOT"
 export LEPTOS_SITE_PKG_DIR="pkg"
+export LEPTOS_OUTPUT_NAME="clock-it"
 
-# Configure host and port for Railway
-export LEPTOS_SITE_ADDR="${HOST:-0.0.0.0}:${PORT:-8080}"
+# Ensure PORT is set for Railway - this is what your Rust code reads!
+if [ -z "$PORT" ]; then
+    export PORT=3000
+fi
 
+# For debugging
 echo "Starting application..."
 echo "DATABASE_URL: $DATABASE_URL"
 echo "LEPTOS_SITE_ROOT: $LEPTOS_SITE_ROOT"
-echo "LEPTOS_SITE_ADDR: $LEPTOS_SITE_ADDR"
+echo "PORT: $PORT"
 
 # Start the application
 exec "$BINARY"
